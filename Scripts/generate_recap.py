@@ -7,6 +7,7 @@ de todos los arreglos documentados en FIXES_LOG.md desde el último release.
 import subprocess
 import re
 import sys
+import os
 
 def get_last_tag():
     try:
