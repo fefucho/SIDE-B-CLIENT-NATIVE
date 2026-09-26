@@ -1,0 +1,70 @@
+import Foundation
+import Observation
+import SideBCore
+
+@MainActor
+@Observable
+final class ArtistDetailViewModel {
+    var artist: ArtistDetailRecord?
+    var isLoading: Bool = false
+    var errorMessage: String?
+
+    init() {}
+
+    func loadArtist(core: SideBCore, browseId: String) async {
+        self.isLoading = true
+        self.errorMessage = nil
+        do {
+            let detail = try await core.getArtist(browseId: browseId)
+            self.artist = detail
+        } catch {
+            print("[ArtistDetailViewModel] Error al cargar artista \(browseId): \(error)")
+            self.errorMessage = error.localizedDescription
+        }
+        self.isLoading = false
+    }
+
+    func toggleSubscription(core: SideBCore) async {
+        guard let a = artist else { return }
+        let newStatus = !a.subscribed
+        do {
+            try await core.subscribeArtist(channelId: a.channelId, subscribe: newStatus)
+            if var current = self.artist {
+                current.subscribed = newStatus
+                self.artist = current
+            }
+        } catch {
+            print("[ArtistDetailViewModel] Error al actualizar suscripción: \(error)")
+        }
+    }
+
+    func startRadio(core: SideBCore, player: PlayerViewModel) {
+        guard let a = artist else { return }
+        player.startRadioForCollection(
+            id: a.channelId,
+            title: a.name,
+            prefix: "RDAMVM",
+            directRadioId: a.radioPlaylistId,
+            fallbackTracks: a.topSongs
+        )
+    }
+
+    func shuffleTopSongs(player: PlayerViewModel) {
+        guard let a = artist, !a.topSongs.isEmpty else { return }
+        let shuffled = a.topSongs.shuffled()
+        player.queueManager.replaceQueue(
+            with: shuffled,
+            startingAt: 0,
+            context: .custom(title: "\(a.name) (Aleatorio)"),
+            contextTitle: "\(a.name) (Aleatorio)"
+        )
+        player.playQueueIndex(0)
+        player.queueManager.isShuffle = true
+    }
+
+    func playTopSong(at index: Int, player: PlayerViewModel) {
+        guard let a = artist, index >= 0, index < a.topSongs.count else { return }
+        let song = a.topSongs[index]
+        player.playWithRadio(song)
+    }
+}

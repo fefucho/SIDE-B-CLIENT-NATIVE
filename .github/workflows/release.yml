@@ -1,0 +1,57 @@
+name: Release Side B
+
+'on':
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Compilar y Publicar macOS App
+    runs-on: macos-15
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar toolchain de Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache de dependencias de Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Compilar SideBCore.xcframework
+        run: |
+          cd apple
+          chmod +x build_xcframework.sh
+          ./build_xcframework.sh
+
+      - name: Compilar y empaquetar Side B.app
+        run: |
+          cd apple
+          swift build -c release --product SideB
+          chmod +x ../Scripts/package_release.sh
+          ../Scripts/package_release.sh "${{ github.ref_name }}"
+
+      - name: Publicar GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "apple/SideB-macOS.zip"
+          generate_release_notes: true
+          draft: false
+          prerelease: false

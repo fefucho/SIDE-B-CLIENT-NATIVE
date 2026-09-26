@@ -1,0 +1,79 @@
+import SwiftUI
+import AppKit
+
+// MARK: - AppTheme (Side B Design System)
+
+public enum AppTheme {
+    // MARK: - Refined Accent Palette (Apple Music macOS 26/27 Style #FA2D48)
+    /// Rojo frambuesa refinado oficial (#FA2D48), calibrado para interfaces oscuras y pantallas Liquid Retina XDR sin fatiga visual.
+    public static let accent = Color(red: 250/255, green: 45/255, blue: 72/255)
+    
+    /// Rojo refinado en NSColor para componentes AppKit (NativeTrackTableView).
+    public static let nsAccent = NSColor(srgbRed: 250/255, green: 45/255, blue: 72/255, alpha: 1.0)
+    
+    /// Resplandor sutil para halos y elevación.
+    public static let accentGlow = Color(red: 250/255, green: 45/255, blue: 72/255).opacity(0.35)
+    
+    // MARK: - Content surfaces
+    /// Fondo oscuro suave: permite separar el contenido de la barra lateral translúcida.
+    public static let darkBackground = Color(red: 27/255, green: 27/255, blue: 30/255)
+    
+    public static let nsDarkBackground = NSColor(srgbRed: 27/255, green: 27/255, blue: 30/255, alpha: 1.0)
+    
+    /// Tinte sutil sobre el material de la barra lateral.
+    public static let sidebarBackground = Color(red: 36/255, green: 36/255, blue: 42/255)
+    
+    /// Fondo de tarjetas elevadas sobre el negro profundo.
+    public static let cardBackground = Color.white.opacity(0.05)
+    
+    /// Fondo de tarjetas elevadas en estado hover.
+    public static let cardHoverBackground = Color.white.opacity(0.08)
+    
+    /// Borde sutil continuo para tarjetas y cápsulas en macOS 26/27.
+    public static let cardBorder = Color.white.opacity(0.08)
+    public static let nsCardBorder = NSColor.white.withAlphaComponent(0.08)
+    public static let cardBorderWidth: CGFloat = 0.5
+
+    /// Fondo neutro translúcido elegante para pistas en reproducción activa (reemplaza el fondo rojo estridente).
+    public static let activeRowBackground = Color.white.opacity(0.07)
+    public static let nsActiveRowBackground = NSColor.white.withAlphaComponent(0.065)
+    public static let activeRowBorder = Color.white.opacity(0.09)
+    public static let nsActiveRowBorder = NSColor.white.withAlphaComponent(0.09)
+}
+
+// MARK: - Color Extensions
+
+public extension Color {
+    /// Acento refinado Side B (#FA2D48).
+    static var sidebAccent: Color { AppTheme.accent }
+    
+    /// Fondo oscuro del área de contenido.
+    static var sidebDarkBackground: Color { AppTheme.darkBackground }
+    
+    /// Fondo sutil para tarjetas en reposo.
+    static var sidebCardBackground: Color { AppTheme.cardBackground }
+    
+    /// Borde sutil para tarjetas y cápsulas.
+    static var sidebCardBorder: Color { AppTheme.cardBorder }
+
+    /// Fondo para filas activas en reproducción.
+    static var sidebActiveRowBackground: Color { AppTheme.activeRowBackground }
+    static var sidebActiveRowBorder: Color { AppTheme.activeRowBorder }
+}
+
+// MARK: - NSColor Extensions
+
+public extension NSColor {
+    /// Acento refinado Side B en AppKit.
+    static var sidebAccent: NSColor { AppTheme.nsAccent }
+    
+    /// Fondo oscuro del área de contenido en AppKit.
+    static var sidebDarkBackground: NSColor { AppTheme.nsDarkBackground }
+
+    /// Borde de tarjeta continuo para AppKit.
+    static var sidebCardBorder: NSColor { AppTheme.nsCardBorder }
+
+    /// Fondo para filas activas en reproducción en AppKit.
+    static var sidebActiveRowBackground: NSColor { AppTheme.nsActiveRowBackground }
+    static var sidebActiveRowBorder: NSColor { AppTheme.nsActiveRowBorder }
+}

@@ -1,0 +1,515 @@
+import AppKit
+import Foundation
+import SideBCore
+
+// MARK: - MenuActionExecutor
+
+/// Ejecutor centralizado y único para todas las acciones de menú contextual (PLAN-007).
+/// Se encarga de la invocación de AVPlayer/QueueManager, comunicación con Core/UniFFI,
+/// navegación de páginas, feedback nativo de compartir y manejo explícito de errores con rollback.
+@MainActor
+final class MenuActionExecutor {
+    private weak var player: PlayerViewModel?
+    private weak var router: NavigationRouter?
+    private let core: SideBCore?
+
+    private enum PlaylistLoadError: LocalizedError {
+        case repeatedContinuation
+        case tooManyPages
+
+        var errorDescription: String? {
+            switch self {
+            case .repeatedContinuation:
+                return "La playlist devolvió una página repetida. No se modificó la cola."
+            case .tooManyPages:
+                return "La playlist tiene demasiadas páginas para completar esta acción. No se modificó la cola."
+            }
+        }
+    }
+
+    init(
+        player: PlayerViewModel?,
+        router: NavigationRouter?,
+        core: SideBCore?
+    ) {
+        self.player = player
+        self.router = router
+        self.core = core
+    }
+
+    // MARK: - Ejecución Central
+
+    func execute(
+        action: MenuActionId,
+        target: MenuTarget,
+        facts: MenuFacts
+    ) {
+        print("[MenuActionExecutor] Ejecutando acción: \(action) sobre \(target)")
+        switch action {
+        // --- 1. Reproducción ---
+        case .play:
+            executePlay(target: target)
+        case .shuffle:
+            executeShuffle(target: target)
+        case .startMix:
+            executeStartMix(target: target)
+        case .playNext:
+            executePlayNext(target: target)
+        case .addToQueue:
+            executeAddToQueue(target: target)
+
+        // --- 2. Colección ---
+        case .toggleLike:
+            if case .song(let song) = target, let player {
+                player.toggleTrackLike(song)
+            }
+        case .toggleLibrary(let inLibrary):
+            executeToggleLibrary(target: target, inLibrary: inLibrary)
+        case .addToPlaylist(let playlistId, _):
+            if case .song(let song) = target {
+                executeAddSongToPlaylist(song: song, playlistId: playlistId)
+            }
+        case .createPlaylistAndAdd:
+            if case .song(let song) = target {
+                NotificationCenter.default.post(
+                    name: .sideBRequestCreatePlaylist,
+                    object: nil,
+                    userInfo: ["videoId": song.videoId]
+                )
+            }
+        case .toggleSubscription(let subscribed):
+            if case .artist(let channelId, _, _, _) = target {
+                executeToggleSubscription(channelId: channelId, subscribed: subscribed)
+            }
+
+        // --- 3. Navegación ---
+        case .goToAlbum(let browseId):
+            router?.navigate(to: .album(browseId: browseId))
+        case .goToArtist(let channelId):
+            router?.navigate(to: .artist(browseId: channelId))
+        case .goToPlaylist(let id):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            router?.navigate(to: .playlist(browseId: canonicalId))
+
+        // --- 4. Compartir ---
+        case .share:
+            executeShare(target: target)
+
+        // --- 5. Edición y Destructivas ---
+        case .editDetails:
+            facts.onEditPlaylist?()
+        case .sort(let value, _):
+            facts.onSortPlaylist?(value)
+        case .removeFromPlaylist:
+            facts.onRemoveFromPlaylist?()
+        case .removeFromQueue(let index):
+            if let customCallback = facts.onRemoveFromQueue {
+                customCallback(index)
+            } else if let player {
+                player.removeQueueTrack(at: index)
+            }
+        case .deletePlaylist:
+            executeDeletePlaylist(target: target, facts: facts)
+        }
+    }
+
+    // MARK: - Handlers de Reproducción
+
+    private func executePlay(target: MenuTarget) {
+        guard let player else { return }
+        switch target {
+        case .song(let song):
+            player.playWithRadio(song)
+        case .album(let browseId, _, _, _, _, _):
+            Task {
+                guard let core, let album = try? await core.getAlbum(browseId: browseId), !album.items.isEmpty else {
+                    return
+                }
+                player.playAlbum(
+                    browseId: album.browseId,
+                    title: album.title,
+                    tracks: album.items,
+                    startingAt: 0,
+                    artistBrowseId: album.artistId
+                )
+            }
+        case .playlist(let id, _, _, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            Task {
+                guard let core, let pl = try? await core.getPlaylist(playlistId: canonicalId), !pl.items.isEmpty else {
+                    return
+                }
+                player.playPlaylist(
+                    browseId: pl.id,
+                    title: pl.title,
+                    tracks: pl.items,
+                    startingAt: 0,
+                    continuation: pl.continuation
+                )
+            }
+        case .radioMix(let id, let title, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            player.startRadioForCollection(id: canonicalId, title: title)
+        case .artist(let channelId, let name, _, let radioId):
+            player.startRadioForCollection(
+                id: channelId,
+                title: name,
+                prefix: "RDAMVM",
+                directRadioId: radioId
+            )
+        }
+    }
+
+    private func executeShuffle(target: MenuTarget) {
+        guard let player else { return }
+        switch target {
+        case .song:
+            break
+        case .album(let browseId, _, _, _, _, _):
+            Task {
+                guard let core, let album = try? await core.getAlbum(browseId: browseId), !album.items.isEmpty else {
+                    return
+                }
+                player.playAlbum(
+                    browseId: album.browseId,
+                    title: album.title,
+                    tracks: album.items.shuffled(),
+                    startingAt: 0,
+                    artistBrowseId: album.artistId
+                )
+                player.queueManager.isShuffle = true
+            }
+        case .playlist(let id, _, _, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            Task {
+                guard let core else { return }
+                do {
+                    let (playlist, tracks) = try await loadCompletePlaylist(id: canonicalId, core: core)
+                    guard !tracks.isEmpty else { return }
+                    player.playPlaylist(
+                        browseId: playlist.id,
+                        title: playlist.title,
+                        tracks: tracks.shuffled(),
+                        startingAt: 0
+                    )
+                    player.queueManager.isShuffle = true
+                } catch {
+                    Self.showErrorAlert(title: "No se pudo reproducir la playlist en aleatorio", detail: error.localizedDescription)
+                }
+            }
+        case .radioMix, .artist:
+            break
+        }
+    }
+
+    private func executeStartMix(target: MenuTarget) {
+        guard let player else { return }
+        switch target {
+        case .song(let song):
+            player.playWithRadio(song)
+        case .album(let browseId, let playlistId, let title, _, _, _):
+            let targetId = playlistId ?? browseId
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(targetId)
+            player.startRadioForCollection(id: canonicalId, title: title, prefix: "RDAMPL")
+        case .playlist(let id, let title, _, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            player.startRadioForCollection(id: canonicalId, title: title, prefix: "RDAMPL")
+        case .radioMix(let id, let title, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            player.startRadioForCollection(id: canonicalId, title: title)
+        case .artist(let channelId, let name, _, let radioId):
+            player.startRadioForCollection(
+                id: channelId,
+                title: name,
+                prefix: "RDAMVM",
+                directRadioId: radioId
+            )
+        }
+    }
+
+    private func executePlayNext(target: MenuTarget) {
+        guard let player else { return }
+        switch target {
+        case .song(let song):
+            player.playNext(song: song)
+        case .album(let browseId, _, _, _, _, _):
+            Task {
+                guard let core, let album = try? await core.getAlbum(browseId: browseId) else { return }
+                player.playNext(tracks: album.items)
+            }
+        case .playlist(let id, _, _, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            Task {
+                guard let core else { return }
+                do {
+                    let (_, tracks) = try await loadCompletePlaylist(id: canonicalId, core: core)
+                    player.playNext(tracks: tracks)
+                } catch {
+                    Self.showErrorAlert(title: "No se pudo añadir la playlist a continuación", detail: error.localizedDescription)
+                }
+            }
+        case .radioMix, .artist:
+            break
+        }
+    }
+
+    private func executeAddToQueue(target: MenuTarget) {
+        guard let player else { return }
+        switch target {
+        case .song(let song):
+            player.addToQueue(song: song)
+        case .album(let browseId, _, _, _, _, _):
+            Task {
+                guard let core, let album = try? await core.getAlbum(browseId: browseId) else { return }
+                player.addToQueue(tracks: album.items)
+            }
+        case .playlist(let id, _, _, _, _):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            Task {
+                guard let core else { return }
+                do {
+                    let (_, tracks) = try await loadCompletePlaylist(id: canonicalId, core: core)
+                    player.addToQueue(tracks: tracks)
+                } catch {
+                    Self.showErrorAlert(title: "No se pudo añadir la playlist a la cola", detail: error.localizedDescription)
+                }
+            }
+        case .radioMix, .artist:
+            break
+        }
+    }
+
+    /// Las acciones masivas se ejecutan solo después de obtener la playlist completa.
+    private func loadCompletePlaylist(
+        id: String,
+        core: SideBCore
+    ) async throws -> (PlaylistDetailRecord, [SongItemRecord]) {
+        let playlist = try await core.getPlaylist(playlistId: id)
+        var tracks = playlist.items
+        var continuation = playlist.continuation
+        var seenTokens = Set<String>()
+
+        while let token = continuation, !token.isEmpty {
+            try Task.checkCancellation()
+            guard seenTokens.insert(token).inserted else {
+                throw PlaylistLoadError.repeatedContinuation
+            }
+            guard seenTokens.count <= 500 else {
+                throw PlaylistLoadError.tooManyPages
+            }
+            let page = try await core.getPlaylistContinuation(token: token)
+            tracks.append(contentsOf: page.items)
+            continuation = page.continuation
+        }
+
+        return (playlist, tracks)
+    }
+
+    // MARK: - Handlers de Colección
+
+    private func executeToggleLibrary(target: MenuTarget, inLibrary: Bool) {
+        guard let core else { return }
+        let newStatus = !inLibrary
+
+        switch target {
+        case .song(let song):
+            guard let library = song.library,
+                  let token = inLibrary ? library.removeToken : library.addToken,
+                  !token.isEmpty else { return }
+            Task {
+                do {
+                    try await core.applySongLibraryAction(token: token)
+                    NotificationCenter.default.post(name: .sideBSongLibraryChanged, object: nil)
+                } catch {
+                    Self.showErrorAlert(
+                        title: "Error al actualizar la biblioteca",
+                        detail: error.localizedDescription
+                    )
+                }
+            }
+
+        case .album(let browseId, let playlistId, let title, let artist, _, let thumbnail):
+            let targetId = playlistId ?? browseId
+            let card = BrowseCardRecord(
+                kind: "album",
+                id: browseId,
+                title: title,
+                subtitle: artist,
+                thumbnail: thumbnail,
+                duration: nil
+            )
+            // Actualización optimista
+            NotificationCenter.default.post(
+                name: .sideBLibraryAlbumToggled,
+                object: nil,
+                userInfo: ["browseId": browseId, "inLibrary": newStatus, "card": card]
+            )
+            Task {
+                do {
+                    try await core.likePlaylist(playlistId: targetId, like: newStatus)
+                } catch {
+                    // Rollback optimista ante fallo
+                    NotificationCenter.default.post(
+                        name: .sideBLibraryAlbumToggled,
+                        object: nil,
+                        userInfo: ["browseId": browseId, "inLibrary": inLibrary, "card": card]
+                    )
+                    Self.showErrorAlert(
+                        title: "No se pudo actualizar el álbum en la biblioteca",
+                        detail: error.localizedDescription
+                    )
+                }
+            }
+
+        case .playlist(let id, let title, let subtitle, let thumbnail, _),
+             .radioMix(let id, let title, let subtitle, let thumbnail):
+            let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+            let card = BrowseCardRecord(
+                kind: "playlist",
+                id: canonicalId,
+                title: title,
+                subtitle: subtitle,
+                thumbnail: thumbnail,
+                duration: nil
+            )
+            NotificationCenter.default.post(
+                name: .sideBLibraryPlaylistToggled,
+                object: nil,
+                userInfo: ["playlistId": canonicalId, "inLibrary": newStatus, "card": card]
+            )
+            Task {
+                do {
+                    try await core.likePlaylist(playlistId: canonicalId, like: newStatus)
+                } catch {
+                    NotificationCenter.default.post(
+                        name: .sideBLibraryPlaylistToggled,
+                        object: nil,
+                        userInfo: ["playlistId": canonicalId, "inLibrary": inLibrary, "card": card]
+                    )
+                    Self.showErrorAlert(
+                        title: "No se pudo actualizar la lista en la biblioteca",
+                        detail: error.localizedDescription
+                    )
+                }
+            }
+
+        case .artist:
+            break
+        }
+    }
+
+    private func executeAddSongToPlaylist(song: SongItemRecord, playlistId: String) {
+        guard let core else { return }
+        let canonicalId = MenuIDNormalizer.canonicalPlaylistId(playlistId)
+        Task {
+            do {
+                try await core.addToPlaylist(playlistId: canonicalId, videoId: song.videoId)
+                NotificationCenter.default.post(name: .sideBPlaylistsChanged, object: nil)
+            } catch {
+                Self.showErrorAlert(
+                    title: "No se pudo añadir la canción",
+                    detail: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func executeToggleSubscription(channelId: String, subscribed: Bool) {
+        guard let core else { return }
+        Task {
+            do {
+                try await core.subscribeArtist(channelId: channelId, subscribe: !subscribed)
+            } catch {
+                Self.showErrorAlert(
+                    title: "No se pudo actualizar la suscripción",
+                    detail: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    // MARK: - Handlers de Compartir
+
+    private func executeShare(target: MenuTarget) {
+        let url: URL?
+        switch target {
+        case .song(let song):
+            url = MenuIDNormalizer.songShareURL(videoId: song.videoId)
+        case .album(let browseId, let playlistId, _, _, _, _):
+            url = MenuIDNormalizer.collectionShareURL(id: playlistId ?? browseId)
+        case .playlist(let id, _, _, _, _), .radioMix(let id, _, _, _):
+            url = MenuIDNormalizer.collectionShareURL(id: id)
+        case .artist(let channelId, _, _, _):
+            url = MenuIDNormalizer.artistShareURL(channelId: channelId)
+        }
+
+        guard let shareURL = url else { return }
+        Self.shareURL(shareURL)
+    }
+
+    public static func shareURL(_ url: URL) {
+        // 1. Copiar al portapapeles siempre para comodidad en macOS
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+
+        // 2. Desplegar selector nativo de compartir
+        let picker = NSSharingServicePicker(items: [url])
+        let mouseLoc = NSEvent.mouseLocation
+        if let window = NSApp.windows.first(where: { $0.isVisible && $0.frame.contains(mouseLoc) }),
+            let contentView = window.contentView {
+            let winPt = window.convertPoint(fromScreen: mouseLoc)
+            let viewPt = contentView.convert(winPt, from: nil)
+            let rect = NSRect(origin: viewPt, size: CGSize(width: 1, height: 1))
+            picker.show(relativeTo: rect, of: contentView, preferredEdge: .minY)
+        }
+    }
+
+    // MARK: - Handlers de Eliminación / Destructivas
+
+    private func executeDeletePlaylist(target: MenuTarget, facts: MenuFacts) {
+        guard case .playlist(let id, let title, _, _, _) = target else { return }
+        let canonicalId = MenuIDNormalizer.canonicalPlaylistId(id)
+
+        // La vista de detalle ya presenta su propio diálogo de confirmación.
+        if let customCallback = facts.onDeletePlaylist {
+            customCallback()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "¿Eliminar playlist?"
+        alert.informativeText = "¿Seguro que deseas eliminar «\(title)» de YouTube Music? Esta acción no se puede deshacer."
+        alert.alertStyle = .critical
+        alert.addButton(withTitle: "Eliminar")
+        alert.addButton(withTitle: "Cancelar")
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        if let core {
+            Task {
+                do {
+                    try await core.deletePlaylist(playlistId: canonicalId)
+                    NotificationCenter.default.post(name: .sideBPlaylistsChanged, object: nil)
+                    router?.goBack()
+                } catch {
+                    Self.showErrorAlert(
+                        title: "No se pudo eliminar la playlist",
+                        detail: error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Error Feedback
+
+    public static func showErrorAlert(title: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Aceptar")
+        alert.runModal()
+    }
+}

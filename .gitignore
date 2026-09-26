@@ -1,0 +1,34 @@
+# Archivos del sistema operativo macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Rust / Cargo
+**/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# Swift Package Manager y Xcode
+**/.build/
+**/.swiftpm/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Binarios generados pesados (superan límite de 100 MB de GitHub)
+apple/SideBCore.xcframework/
+*.xcframework/
+*.app/
+*.zip
+*.dmg
+
+# Directorios de compilación locales
+.build/
+apple/.build/
+
+# Archivos temporales de actualización
+Updates/
+*.tmp
+*.log
