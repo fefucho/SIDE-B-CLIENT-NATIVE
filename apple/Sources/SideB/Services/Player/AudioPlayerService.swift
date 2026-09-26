@@ -52,9 +52,8 @@ public final class AudioPlayerService {
         self.player.automaticallyWaitsToMinimizeStalling = true
     }
 
-    isolated deinit {
-        cleanupTimeObserver()
-        cleanupItemObservers()
+    deinit {
+        // La limpieza de observadores se gestiona activamente en stop()
     }
 
     // MARK: - Control de Reproducción

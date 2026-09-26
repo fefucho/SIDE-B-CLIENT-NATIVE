@@ -22,7 +22,10 @@ let package = Package(
             dependencies: [
                 "SideBCore"
             ],
-            path: "Sources/SideB"
+            path: "Sources/SideB",
+            swiftSettings: [
+                .enableExperimentalFeature("IsolatedDeinit")
+            ]
         ),
         .target(
             name: "SideBCore",
