@@ -180,8 +180,14 @@ public final class UpdateService: NSObject, @unchecked Sendable {
         #!/bin/bash
         set -e
         # 1. Esperar a que la instancia actual de Side B termine
+        WAIT_COUNT=0
         while kill -0 "\(currentPid)" 2>/dev/null; do
-            sleep 0.15
+            sleep 0.2
+            WAIT_COUNT=$((WAIT_COUNT + 1))
+            if [ $WAIT_COUNT -ge 15 ]; then
+                kill -9 "\(currentPid)" 2>/dev/null || true
+                break
+            fi
         done
 
         # 2. Descomprimir el ZIP
@@ -224,8 +230,13 @@ public final class UpdateService: NSObject, @unchecked Sendable {
         launcher.arguments = [scriptURL.path]
         try launcher.run()
 
-        // Terminar limpiamente la app para que el script pueda sustituirla
-        NSApplication.shared.terminate(nil)
+        // Terminar la app para que el script pueda sustituirla.
+        // En macOS con ventanas modales activas, NSApp.terminate() puede
+        // quedar diferido por el runloop. exit(0) garantiza el cierre inmediato.
+        DispatchQueue.main.async {
+            NSApplication.shared.terminate(nil)
+            exit(0)
+        }
     }
 
     // MARK: - Utilidades SemVer
