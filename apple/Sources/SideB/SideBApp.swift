@@ -70,7 +70,16 @@ struct SideBApp: App {
                         playerViewModel.switchPlaybackSession(to: "guest")
                     }
                     Task {
+                        // Esperar 2 segundos tras el bootstrap para no competir con el arranque de la app
+                        try? await Task.sleep(for: .seconds(2))
                         await UpdateService.shared.checkForUpdates(manual: false)
+
+                        // Comprobación periódica cada 24 horas en segundo plano
+                        while !Task.isCancelled {
+                            try? await Task.sleep(for: .seconds(86400))
+                            guard !Task.isCancelled else { break }
+                            await UpdateService.shared.checkForUpdates(manual: false)
+                        }
                     }
                 }
                 .sheet(isPresented: $showLoginSheet) {

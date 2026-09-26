@@ -59,6 +59,48 @@ public final class UpdateService: NSObject, @unchecked Sendable {
         }
     }
 
+    private let skippedVersionKey = "SideB_SkippedVersion"
+    private let lastCheckDateKey = "SideB_LastUpdateCheckDate"
+
+    public var skippedVersion: String? {
+        get { UserDefaults.standard.string(forKey: skippedVersionKey) }
+        set {
+            if let value = newValue {
+                UserDefaults.standard.set(value, forKey: skippedVersionKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: skippedVersionKey)
+            }
+        }
+    }
+
+    public var lastCheckDate: Date? {
+        get { UserDefaults.standard.object(forKey: lastCheckDateKey) as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: lastCheckDateKey) }
+    }
+
+    /// Oculta el diálogo y guarda la versión para no volver a alertar automáticamente.
+    public func skipVersion(_ version: String) {
+        skippedVersion = version
+        isSheetPresented = false
+        state = .idle
+    }
+
+    /// Reinicia la versión omitida para permitir futuras alertas.
+    public func resetSkippedVersion() {
+        skippedVersion = nil
+    }
+
+    /// Determina si se debe notificar al usuario de una versión remota.
+    public func shouldNotifyUser(for remoteVersion: String, manual: Bool) -> Bool {
+        if manual {
+            return true
+        }
+        if let skipped = skippedVersion, skipped == remoteVersion {
+            return false
+        }
+        return true
+    }
+
     /// Comprueba si existe una versión más reciente en GitHub Releases.
     public func checkForUpdates(manual: Bool = false) async {
         state = .checking
@@ -121,6 +163,8 @@ public final class UpdateService: NSObject, @unchecked Sendable {
                 return
             }
 
+            lastCheckDate = Date()
+
             if Self.isVersion(remoteVersion, newerThan: currentVersion) {
                 let release = ReleaseInfo(
                     tagName: tagName,
@@ -129,8 +173,13 @@ public final class UpdateService: NSObject, @unchecked Sendable {
                     downloadURL: finalDownloadURL,
                     publishedAt: publishedAt
                 )
-                state = .available(release)
-                isSheetPresented = true
+
+                if shouldNotifyUser(for: remoteVersion, manual: manual) {
+                    state = .available(release)
+                    isSheetPresented = true
+                } else {
+                    state = .idle
+                }
             } else {
                 state = manual ? .upToDate : .idle
             }

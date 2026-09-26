@@ -2376,3 +2376,29 @@
   - El scroll iniciado por la persona pausa el seguimiento. Una cápsula Liquid Glass inferior vuelve a centrar la letra actual y reactiva el seguimiento; las letras sin sincronización permanecen como texto desplazable.
 - **Archivos Modificados**: `apple/Sources/SideB/Views/Fullscreen/FullscreenNowPlayingView.swift`, `apple/Tests/SideBTests/LyricTimingTests.swift`, `documentation/FIXES_LOG.md`.
 - **Verificación**: `swift build --package-path apple` correcto; `swift test --package-path apple` aprobó 55 pruebas, incluidas tres nuevas de tiempos de letras. Queda pendiente la revisión visual interactiva con letras reales en macOS 15 y 26/27.
+
+---
+
+### [FEAT-065] - Popup nativo de actualización con Fix Report, botón Omitir versión y comprobación periódica
+
+- **Fecha**: 2026-09-26 16:25 (GMT-3)
+- **Agente / Rol**: UI/UX & Platform Lead (Swift/macOS)
+- **Componente**: `UpdateService` | `UpdateModalSheet` | `SideBApp` | `App Lifecycle`
+- **Problema / Requerimiento**:
+  - El modal de actualización mostraba un diseño plano y no contaba con opciones de control por parte del usuario (como omitir versiones intermedias no deseadas).
+  - La comprobación en segundo plano competía inmediatamente con el bootstrap de sesión y no existía un ciclo de refresco periódico durante sesiones largas de reproducción.
+  - Las notas de la versión se mostraban en texto monoespaciado crudo sin formateo de Markdown ni realce visual de novedades.
+- **Solución Aplicada**:
+  - **Omitir esta versión (`skipVersion`)**: Persistencia de la versión ignorada en `UserDefaults`. Si el usuario decide omitir, las comprobaciones automáticas no molestan, pero búsquedas manuales o versiones futuras más nuevas restablecen la alerta.
+  - **Comprobación inteligente en segundo plano**: Retardo de 2 segundos en el inicio para permitir el arranque suave de la app, seguido de un ciclo periódico de comprobación cada 24 horas.
+  - **Rediseño Liquid Glass de `UpdateModalSheet`**:
+    - Cabecera con selector de versiones (`Instalada: X.X.X` y `Nueva: Y.Y.Y`).
+    - Renderizado enriquecido de Markdown para el Fix Report con scroll suave y selección de texto.
+    - Barra de tres botones: "Omitir esta versión" (secundario a la izquierda), "Recordar más tarde" (cancelar) y "Actualizar ahora" (prominente).
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Services/Update/UpdateService.swift`
+  - `apple/Sources/SideB/Views/Components/UpdateModalSheet.swift`
+  - `apple/Sources/SideB/SideBApp.swift`
+  - `apple/Tests/SideBTests/UpdateServiceTests.swift`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**: `swift test --package-path apple` aprobó 59 pruebas en 4 suites (incluyendo 10 pruebas especializadas de SemVer y omisión de versión).

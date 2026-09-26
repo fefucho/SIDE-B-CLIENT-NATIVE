@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Hoja modal para mostrar el estado y progreso de actualización de Side B.
+/// Hoja modal estilo nativo Liquid Glass para mostrar el estado, Fix Report
+/// y opciones de actualización de Side B.
 public struct UpdateModalSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var updateService: UpdateService = UpdateService.shared
@@ -8,13 +9,13 @@ public struct UpdateModalSheet: View {
     public init() {}
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 20) {
             headerView
             contentView
             footerView
         }
         .padding(24)
-        .frame(width: 500)
+        .frame(width: 540)
         .background(Color.sidebDarkBackground)
     }
 
@@ -22,92 +23,149 @@ public struct UpdateModalSheet: View {
 
     @ViewBuilder
     private var headerView: some View {
-        HStack(spacing: 16) {
-            Image(systemName: iconName)
-                .font(.system(size: 38))
-                .foregroundStyle(iconColor)
+        HStack(alignment: .top, spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(iconBackgroundColor.opacity(0.15))
+                    .frame(width: 50, height: 50)
 
-            VStack(alignment: .leading, spacing: 4) {
+                Image(systemName: iconName)
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
                 Text(titleText)
                     .font(.title3.bold())
+
                 Text(subtitleText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                if case .available(let info) = updateService.state {
+                    HStack(spacing: 8) {
+                        versionBadge(label: "Instalada", version: updateService.currentVersion, isCurrent: true)
+                        Image(systemName: "arrow.right")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.secondary)
+                        versionBadge(label: "Nueva", version: info.version, isCurrent: false)
+                    }
+                    .padding(.top, 4)
+                }
             }
             Spacer()
         }
     }
 
     @ViewBuilder
+    private func versionBadge(label: String, version: String, isCurrent: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(label + ":")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(version)
+                .font(.caption.bold())
+                .foregroundStyle(isCurrent ? .primary : Color.sidebAccent)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isCurrent ? Color.sidebCardBackground : Color.sidebAccent.opacity(0.12))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isCurrent ? Color.sidebCardBorder : Color.sidebAccent.opacity(0.3), lineWidth: 0.5)
+        )
+    }
+
+    @ViewBuilder
     private var contentView: some View {
         switch updateService.state {
         case .idle, .checking:
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 ProgressView()
-                    .controlSize(.small)
-                Text("Buscando nuevas versiones en GitHub…")
+                    .controlSize(.regular)
+                Text("Comprobando nuevas versiones en GitHub…")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 90)
+            .frame(maxWidth: .infinity, minHeight: 120)
 
         case .upToDate:
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 32))
+                    .font(.system(size: 38))
                     .foregroundStyle(.green)
                 Text("Tienes la versión más reciente instalada (\(updateService.currentVersion)).")
-                    .font(.callout)
+                    .font(.callout.weight(.medium))
+                Text("Side B está totalmente actualizado con las últimas mejoras.")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 90)
+            .frame(maxWidth: .infinity, minHeight: 120)
 
         case .available(let info):
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Notas de la versión:")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: "sparkles")
+                        .foregroundStyle(Color.sidebAccent)
+                    Text("Novedades y correcciones (Fix Report):")
+                        .font(.callout.bold())
+                }
 
                 ScrollView {
-                    Text(info.releaseNotes)
-                        .font(.system(size: 12, design: .monospaced))
+                    Text(LocalizedStringKey(info.releaseNotes))
+                        .font(.callout)
+                        .lineSpacing(4)
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(14)
                 }
-                .frame(height: 160)
-                .background(Color.sidebCardBackground, in: RoundedRectangle(cornerRadius: 8))
+                .frame(height: 190)
+                .background(Color.sidebCardBackground, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 10)
                         .stroke(Color.sidebCardBorder, lineWidth: 0.5)
                 )
             }
 
         case .downloading(let progress):
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Descargando actualización… (\(Int(progress * 100))%)")
-                    .font(.callout.weight(.medium))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Descargando actualización…")
+                        .font(.callout.weight(.semibold))
+                    Spacer()
+                    Text("\(Int(progress * 100))%")
+                        .font(.callout.monospacedDigit().bold())
+                        .foregroundStyle(Color.sidebAccent)
+                }
 
                 ProgressView(value: progress)
                     .tint(Color.sidebAccent)
 
-                Text("Por favor, espera mientras se descarga el nuevo paquete.")
+                Text("Descargando paquete optimizado para Apple Silicon directamente de GitHub Releases.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity, minHeight: 90)
+            .frame(maxWidth: .infinity, minHeight: 110)
 
         case .installing:
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 ProgressView()
-                    .controlSize(.small)
-                Text("Instalando y reiniciando Side B automáticamente…")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .controlSize(.regular)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Instalando actualización…")
+                        .font(.callout.weight(.semibold))
+                    Text("Side B se reiniciará automáticamente en unos segundos.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .frame(maxWidth: .infinity, minHeight: 90)
+            .frame(maxWidth: .infinity, minHeight: 110)
 
         case .failed(let message):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 Text("No se pudo completar la comprobación o actualización:")
                     .font(.callout.bold())
                     .foregroundStyle(.red)
@@ -116,34 +174,54 @@ public struct UpdateModalSheet: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, minHeight: 90)
+            .frame(maxWidth: .infinity, minHeight: 110)
         }
     }
 
     @ViewBuilder
     private var footerView: some View {
         HStack {
-            Spacer()
             switch updateService.state {
             case .idle, .checking:
+                Spacer()
                 Button("Cancelar") {
                     updateService.isSheetPresented = false
                     dismiss()
                 }
 
-            case .upToDate, .failed:
-                Button("Aceptar") {
+            case .upToDate:
+                Spacer()
+                Button("Entendido") {
+                    updateService.isSheetPresented = false
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+
+            case .failed:
+                Spacer()
+                Button("Cerrar") {
                     updateService.isSheetPresented = false
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
 
             case .available(let info):
+                Button("Omitir esta versión") {
+                    updateService.skipVersion(info.version)
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .font(.callout)
+                .help("No volver a avisar automáticamente sobre la versión \(info.version)")
+
+                Spacer()
+
                 Button("Recordar más tarde") {
                     updateService.isSheetPresented = false
                     dismiss()
                 }
-                .disabled(updateService.state == .installing)
+                .keyboardShortcut(.cancelAction)
 
                 Button("Actualizar ahora") {
                     Task {
@@ -152,9 +230,11 @@ public struct UpdateModalSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color.sidebAccent)
+                .keyboardShortcut(.defaultAction)
 
             case .downloading:
-                Button("Cancelar") {
+                Spacer()
+                Button("Cancelar descarga") {
                     updateService.isSheetPresented = false
                     dismiss()
                 }
@@ -163,6 +243,7 @@ public struct UpdateModalSheet: View {
                 EmptyView()
             }
         }
+        .padding(.top, 4)
     }
 
     // MARK: - Computed Properties
@@ -170,13 +251,15 @@ public struct UpdateModalSheet: View {
     private var iconName: String {
         switch updateService.state {
         case .idle, .checking:
-            return "arrow.triangle.2.circlepath.circle"
+            return "arrow.triangle.2.circlepath"
         case .upToDate:
             return "checkmark.circle.fill"
         case .available:
             return "arrow.down.circle.fill"
-        case .downloading, .installing:
-            return "arrow.down.app.fill"
+        case .downloading:
+            return "arrow.down.to.line.compact"
+        case .installing:
+            return "gearshape.arrow.triangle.2.circlepath"
         case .failed:
             return "exclamationmark.triangle.fill"
         }
@@ -193,6 +276,10 @@ public struct UpdateModalSheet: View {
         }
     }
 
+    private var iconBackgroundColor: Color {
+        iconColor
+    }
+
     private var titleText: String {
         switch updateService.state {
         case .idle, .checking:
@@ -200,7 +287,7 @@ public struct UpdateModalSheet: View {
         case .upToDate:
             return "Side B está al día"
         case .available(let info):
-            return "Side B \(info.version) disponible"
+            return "Nueva versión disponible: Side B \(info.version)"
         case .downloading:
             return "Descargando actualización"
         case .installing:
@@ -212,10 +299,18 @@ public struct UpdateModalSheet: View {
 
     private var subtitleText: String {
         switch updateService.state {
-        case .available(let info):
-            return "Versión actual: \(updateService.currentVersion) → Nueva: \(info.version)"
+        case .available:
+            return "Una versión más reciente de Side B está lista para descargar e instalar."
+        case .upToDate:
+            return "No hay nuevas actualizaciones en este momento."
+        case .downloading:
+            return "El paquete se está descargando de forma segura."
+        case .installing:
+            return "Reemplazando archivos y preparando el reinicio."
+        case .failed:
+            return "Hubo un inconveniente al comprobar las actualizaciones."
         default:
-            return "Versión actual \(updateService.currentVersion)"
+            return "Versión actual instalada: \(updateService.currentVersion)"
         }
     }
 }

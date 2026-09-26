@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SideB
 
@@ -43,5 +44,54 @@ struct UpdateServiceTests {
         #expect(UpdateService.isVersion("1.0.1", newerThan: "1.0"))
         #expect(!UpdateService.isVersion("1.0", newerThan: "1.0.1"))
         #expect(UpdateService.isVersion("1.1", newerThan: "1.0.5"))
+    }
+
+    @Test("Omitir versión: suprime notificación en comprobación automática")
+    @MainActor
+    func testSkippedVersionSuppression() {
+        let service = UpdateService()
+        service.skippedVersion = "1.0.6"
+        #expect(!service.shouldNotifyUser(for: "1.0.6", manual: false))
+        service.resetSkippedVersion()
+    }
+
+    @Test("Omitir versión: búsqueda manual siempre notifica aunque esté omitida")
+    @MainActor
+    func testSkippedVersionOverridesOnManualCheck() {
+        let service = UpdateService()
+        service.skippedVersion = "1.0.6"
+        #expect(service.shouldNotifyUser(for: "1.0.6", manual: true))
+        service.resetSkippedVersion()
+    }
+
+    @Test("Omitir versión: una versión más nueva notifica automáticamente")
+    @MainActor
+    func testNewerVersionOverridesPreviousSkip() {
+        let service = UpdateService()
+        service.skippedVersion = "1.0.6"
+        #expect(service.shouldNotifyUser(for: "1.0.7", manual: false))
+        service.resetSkippedVersion()
+    }
+
+    @Test("Método skipVersion persiste valor y resetea estado")
+    @MainActor
+    func testSkipVersionMethodAndReset() {
+        let service = UpdateService()
+        service.isSheetPresented = true
+        service.state = .available(ReleaseInfo(
+            tagName: "v2.0.0",
+            version: "2.0.0",
+            releaseNotes: "Notas",
+            downloadURL: URL(string: "https://example.com/app.zip")!,
+            publishedAt: nil
+        ))
+
+        service.skipVersion("2.0.0")
+        #expect(service.skippedVersion == "2.0.0")
+        #expect(!service.isSheetPresented)
+        #expect(service.state == .idle)
+
+        service.resetSkippedVersion()
+        #expect(service.skippedVersion == nil)
     }
 }
