@@ -40,6 +40,7 @@ final class LibraryViewModel {
     var errorMessage: String?
     var isHistoryLoading: Bool = false
     var historyErrorMessage: String?
+    var rustCore: SideBCore? = nil
     @ObservationIgnored private var sessionGeneration: UInt = 0
     @ObservationIgnored private var libraryGeneration: UInt = 0
 
@@ -58,8 +59,9 @@ final class LibraryViewModel {
                   let browseId = info["browseId"] as? String,
                   let inLibrary = info["inLibrary"] as? Bool else { return }
             let card = info["card"] as? BrowseCardRecord
+            let tracks = info["tracks"] as? [SongItemRecord]
             MainActor.assumeIsolated {
-                self.handleAlbumToggled(browseId: browseId, inLibrary: inLibrary, card: card)
+                self.handleAlbumToggled(browseId: browseId, inLibrary: inLibrary, card: card, tracks: tracks)
             }
         }
 
@@ -77,20 +79,49 @@ final class LibraryViewModel {
                 self.handlePlaylistToggled(playlistId: playlistId, inLibrary: inLibrary, card: card)
             }
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .sideBPlaybackRecorded,
+            object: nil,
+            queue: .main
+        ) { [weak self] notif in
+            guard let self = self,
+                  let track = notif.userInfo?["track"] as? SongItemRecord else { return }
+            MainActor.assumeIsolated {
+                self.prependPlayedTrack(track)
+            }
+        }
     }
 
-    /// Sincroniza la lista de álbumes en memoria de forma reactiva instantánea ordenados alfabéticamente
-    func handleAlbumToggled(browseId: String, inLibrary: Bool, card: BrowseCardRecord?) {
+    /// Sincroniza la lista de álbumes y canciones en memoria de forma reactiva instantánea
+    func handleAlbumToggled(browseId: String, inLibrary: Bool, card: BrowseCardRecord?, tracks: [SongItemRecord]? = nil) {
         if inLibrary {
             if !self.albums.contains(where: { $0.id == browseId }) {
                 let newCard = card ?? BrowseCardRecord(kind: "album", id: browseId, title: "Álbum", subtitle: nil, thumbnail: nil, duration: nil)
                 self.albums.append(newCard)
                 self.albums.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
             }
+            if let newTracks = tracks, !newTracks.isEmpty {
+                let existingIds = Set(self.songs.map { $0.videoId })
+                let tracksToAdd = newTracks.filter { !existingIds.contains($0.videoId) }
+                self.songs.insert(contentsOf: tracksToAdd, at: 0)
+            }
         } else {
             self.albums.removeAll(where: { $0.id == browseId })
+            if let removedTracks = tracks, !removedTracks.isEmpty {
+                let idsToRemove = Set(removedTracks.map { $0.videoId })
+                self.songs.removeAll(where: { idsToRemove.contains($0.videoId) || $0.albumId == browseId })
+            } else {
+                self.songs.removeAll(where: { $0.albumId == browseId })
+            }
         }
         AppContextMenuFactory.cachedUserAlbums = self.albums
+
+        if let core = self.rustCore {
+            Task {
+                await self.loadSongs(core: core)
+            }
+        }
     }
 
     /// Sincroniza la lista de playlists en memoria de forma reactiva instantánea
@@ -119,6 +150,7 @@ final class LibraryViewModel {
         do {
             let pid = playlistId ?? browseId
             try await core.likePlaylist(playlistId: pid, like: newStatus)
+            NotificationCenter.default.post(name: .sideBSongLibraryChanged, object: nil)
         } catch {
             print("[LibraryViewModel] Error al alternar álbum en biblioteca: \(error)")
             handleAlbumToggled(browseId: browseId, inLibrary: inLibrary, card: card)
@@ -127,6 +159,18 @@ final class LibraryViewModel {
                 object: nil,
                 userInfo: ["browseId": browseId, "inLibrary": inLibrary, "card": card]
             )
+        }
+    }
+
+    /// Recarga la pestaña seleccionada actualmente de la biblioteca
+    func reloadSelectedPageTab(core: SideBCore) async {
+        switch selectedPageTab {
+        case .songs:
+            await loadSongs(core: core)
+        case .artists:
+            await loadArtists(core: core)
+        case .playlists, .albums:
+            await loadLibrary(core: core)
         }
     }
 
@@ -223,14 +267,13 @@ final class LibraryViewModel {
         self.isLoading = false
     }
 
-    /// Recarga el historial de reproducción de forma aislada.
+    /// Recarga el historial de reproducción de forma aislada (remoto si hay sesión o local offline de los últimos 30 días).
     func loadHistory(core: SideBCore) async {
-        guard core.isLoggedIn() else { return }
         let generation = sessionGeneration
         self.isHistoryLoading = true
         do {
             let h = try await core.getHistory()
-            guard generation == sessionGeneration, core.isLoggedIn() else { return }
+            guard generation == sessionGeneration else { return }
             self.historyGroups = h
             self.historyErrorMessage = nil
         } catch {
@@ -241,7 +284,7 @@ final class LibraryViewModel {
         self.isHistoryLoading = false
     }
 
-    func loadSongs(core: SideBCore) async {
+    func loadSongs(core: SideBCore, targetInitialCount: Int = 100) async {
         guard core.isLoggedIn(), !isSongsLoading else { return }
         let generation = sessionGeneration
         isSongsLoading = true
@@ -249,8 +292,46 @@ final class LibraryViewModel {
         do {
             let page = try await core.getLibrarySongs()
             guard generation == sessionGeneration, core.isLoggedIn() else { return }
-            songs = page.items
-            songsContinuation = page.continuation
+            
+            var accumulated = page.items
+            var currentContinuation = page.continuation
+
+            // Si la lista estaba vacía, mostramos la primera página (25) de inmediato sin demoras
+            if songs.isEmpty {
+                songs = page.items
+                songsContinuation = page.continuation
+            }
+
+            // Cargar automáticamente en segundo plano hasta alcanzar targetInitialCount (100 canciones, igual que Likeadas)
+            // o preservar la cantidad que el usuario ya hubiera cargado haciendo scroll.
+            let minTarget = max(targetInitialCount, songs.count)
+            while accumulated.count < minTarget,
+                  let token = currentContinuation,
+                  !token.isEmpty {
+                do {
+                    let nextPage = try await core.getPlaylistContinuation(token: token)
+                    guard generation == sessionGeneration, core.isLoggedIn() else { return }
+                    let seen = Set(accumulated.map { $0.setVideoId ?? $0.videoId })
+                    let newItems = nextPage.items.filter { !seen.contains($0.setVideoId ?? $0.videoId) }
+                    if newItems.isEmpty {
+                        currentContinuation = nil
+                        break
+                    }
+                    accumulated.append(contentsOf: newItems)
+                    currentContinuation = nextPage.continuation == token ? nil : nextPage.continuation
+                    
+                    // Si partió de lista vacía, ir actualizando progresivamente
+                    if songs.count < accumulated.count {
+                        songs = accumulated
+                        songsContinuation = currentContinuation
+                    }
+                } catch {
+                    break
+                }
+            }
+
+            songs = accumulated
+            songsContinuation = currentContinuation
         } catch {
             guard generation == sessionGeneration else { return }
             songsErrorMessage = error.localizedDescription
@@ -258,22 +339,33 @@ final class LibraryViewModel {
         isSongsLoading = false
     }
 
-    func loadMoreSongs(core: SideBCore) async {
+    func loadMoreSongs(core: SideBCore, batchPages: Int = 2) async {
         guard core.isLoggedIn(), !isSongsLoadingMore,
-              let continuation = songsContinuation, !continuation.isEmpty else { return }
+              var continuation = songsContinuation, !continuation.isEmpty else { return }
         let generation = sessionGeneration
         isSongsLoadingMore = true
-        do {
-            let page = try await core.getPlaylistContinuation(token: continuation)
-            guard generation == sessionGeneration, core.isLoggedIn(),
-                  songsContinuation == continuation else { return }
-            let seen = Set(songs.map { $0.setVideoId ?? $0.videoId })
-            songs.append(contentsOf: page.items.filter { !seen.contains($0.setVideoId ?? $0.videoId) })
-            songsContinuation = page.continuation == continuation ? nil : page.continuation
-            songsErrorMessage = nil
-        } catch {
-            guard generation == sessionGeneration else { return }
-            songsErrorMessage = error.localizedDescription
+        for _ in 0..<batchPages {
+            guard !continuation.isEmpty else { break }
+            do {
+                let page = try await core.getPlaylistContinuation(token: continuation)
+                guard generation == sessionGeneration, core.isLoggedIn(),
+                      songsContinuation == continuation else { break }
+                let seen = Set(songs.map { $0.setVideoId ?? $0.videoId })
+                let newItems = page.items.filter { !seen.contains($0.setVideoId ?? $0.videoId) }
+                if newItems.isEmpty {
+                    songsContinuation = nil
+                    break
+                }
+                songs.append(contentsOf: newItems)
+                let nextToken = page.continuation == continuation ? nil : page.continuation
+                songsContinuation = nextToken
+                continuation = nextToken ?? ""
+                songsErrorMessage = nil
+            } catch {
+                guard generation == sessionGeneration else { break }
+                songsErrorMessage = error.localizedDescription
+                break
+            }
         }
         isSongsLoadingMore = false
     }

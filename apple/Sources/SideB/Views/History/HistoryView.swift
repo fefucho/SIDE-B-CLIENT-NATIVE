@@ -7,8 +7,52 @@ struct HistoryView: View {
     @Bindable var libraryViewModel: LibraryViewModel
     var router: NavigationRouter? = nil
 
+    private var historySections: [TrackTableSection] {
+        libraryViewModel.historyGroups.map { group in
+            TrackTableSection(
+                id: group.title,
+                title: normalizeDateTitle(group.title),
+                tracks: group.items
+            )
+        }
+    }
+
     private var allHistoryTracks: [SongItemRecord] {
         libraryViewModel.historyGroups.flatMap(\.items)
+    }
+
+    private func normalizeDateTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
+        if lower == "today" || lower == "hoy" {
+            return "Hoy"
+        }
+        if lower == "yesterday" || lower == "ayer" {
+            return "Ayer"
+        }
+
+        var result = trimmed
+        let dayReplacements: [String: String] = [
+            "Monday": "Lunes", "Tuesday": "Martes", "Wednesday": "Miércoles",
+            "Thursday": "Jueves", "Friday": "Viernes", "Saturday": "Sábado", "Sunday": "Domingo"
+        ]
+        for (en, es) in dayReplacements {
+            if result.contains(en) {
+                result = result.replacingOccurrences(of: en, with: es)
+            }
+        }
+
+        let monthReplacements: [String: String] = [
+            "January": "enero", "February": "febrero", "March": "marzo", "April": "abril",
+            "May": "mayo", "June": "junio", "July": "julio", "August": "agosto",
+            "September": "septiembre", "October": "octubre", "November": "noviembre", "December": "diciembre"
+        ]
+        for (en, es) in monthReplacements {
+            if result.contains(en) {
+                result = result.replacingOccurrences(of: en, with: es)
+            }
+        }
+        return result
     }
 
     var body: some View {
@@ -24,7 +68,7 @@ struct HistoryView: View {
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(.primary)
 
-                Text("Tus reproducciones recientes en YouTube Music")
+                Text("Tus reproducciones recientes ordenadas por día")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
@@ -62,7 +106,7 @@ struct HistoryView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 NativeTrackTableView(
-                    tracks: allHistoryTracks,
+                    sections: historySections,
                     currentTrackVideoId: playerViewModel.currentTrack?.videoId,
                     isPlaying: playerViewModel.isPlaying,
                     playerViewModel: playerViewModel,

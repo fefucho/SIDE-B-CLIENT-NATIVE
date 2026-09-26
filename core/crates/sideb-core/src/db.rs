@@ -667,6 +667,21 @@ impl Db {
         out
     }
 
+    /// Play history from local SQLite since `since` (Unix epoch seconds), ordered most-recent first.
+    /// Returns `(played_at, song_json)`.
+    pub fn recent_plays(&self, since: i64) -> Vec<(i64, String)> {
+        let conn = self.0.lock().unwrap();
+        let mut out = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT played_at, song_json FROM plays WHERE played_at >= ?1 ORDER BY played_at DESC"
+        ) {
+            if let Ok(rows) = stmt.query_map([since], |r| Ok((r.get(0)?, r.get(1)?))) {
+                out.extend(rows.flatten());
+            }
+        }
+        out
+    }
+
     // --- playlist membership index (which of your playlists hold a track) ----------------------
     // Populated by `commands::sync_playlist_index`, which walks the library's owned playlists.
     // Nothing here talks to YouTube; it is the answer, cached, so a track list can draw the
@@ -989,6 +1004,11 @@ mod tests {
             d.play_counts(1_500) == vec![("c".into(), 1)],
             "`since` cuts the same way it does for top_plays"
         );
+
+        let recent = d.recent_plays(900);
+        assert_eq!(recent.len(), 6);
+        assert_eq!(recent[0], (2_000, "{\"c\":1}".into()));
+        assert_eq!(recent[1], (1_100, "{\"a\":2}".into()));
     }
 
     #[test]

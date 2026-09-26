@@ -562,6 +562,8 @@ public protocol SideBCoreProtocol : AnyObject {
     
     /**
      * Fetch user's playback history grouped by day.
+     * If online and logged in, merges remote YouTube Music history with recent local plays.
+     * If offline or logged out, builds daily groups from the local SQLite history for the last 30 days.
      */
     func getHistory() async throws  -> [HistoryGroupRecord]
     
@@ -1017,6 +1019,8 @@ open func getCookie() -> String? {
     
     /**
      * Fetch user's playback history grouped by day.
+     * If online and logged in, merges remote YouTube Music history with recent local plays.
+     * If offline or logged out, builds daily groups from the local SQLite history for the last 30 days.
      */
 open func getHistory()async throws  -> [HistoryGroupRecord] {
     return
@@ -2457,7 +2461,7 @@ public struct FfiConverterTypeHomeArtistRunRecord: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HomeArtistRunRecord {
         return
             try HomeArtistRunRecord(
-                text: FfiConverterString.read(from: &buf),
+                text: FfiConverterString.read(from: &buf), 
                 id: FfiConverterOptionString.read(from: &buf)
         )
     }
@@ -2658,8 +2662,8 @@ public struct FfiConverterTypeHomeItemRecord: FfiConverterRustBuffer {
                 artists: FfiConverterOptionString.read(from: &buf), 
                 artistId: FfiConverterOptionString.read(from: &buf), 
                 album: FfiConverterOptionString.read(from: &buf), 
-                albumId: FfiConverterOptionString.read(from: &buf),
-                artistRuns: FfiConverterSequenceTypeHomeArtistRunRecord.read(from: &buf),
+                albumId: FfiConverterOptionString.read(from: &buf), 
+                artistRuns: FfiConverterSequenceTypeHomeArtistRunRecord.read(from: &buf), 
                 explicit: FfiConverterBool.read(from: &buf)
         )
     }
@@ -2828,7 +2832,7 @@ public struct FfiConverterTypeHomeSectionRecord: FfiConverterRustBuffer {
         return
             try HomeSectionRecord(
                 title: FfiConverterString.read(from: &buf), 
-                format: FfiConverterTypeHomeSectionFormatRecord.read(from: &buf),
+                format: FfiConverterTypeHomeSectionFormatRecord.read(from: &buf), 
                 items: FfiConverterSequenceTypeHomeItemRecord.read(from: &buf), 
                 moreBrowseId: FfiConverterOptionString.read(from: &buf), 
                 moreParams: FfiConverterOptionString.read(from: &buf)
@@ -3777,7 +3781,7 @@ public func FfiConverterTypeStreamPlaybackInfo_lower(_ value: StreamPlaybackInfo
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
 public enum HomeSectionFormatRecord {
-
+    
     case largeCards
     case compactSongs
     case mixed
@@ -3793,32 +3797,32 @@ public struct FfiConverterTypeHomeSectionFormatRecord: FfiConverterRustBuffer {
     public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HomeSectionFormatRecord {
         let variant: Int32 = try readInt(&buf)
         switch variant {
-
+        
         case 1: return .largeCards
-
+        
         case 2: return .compactSongs
-
+        
         case 3: return .mixed
-
+        
         default: throw UniffiInternalError.unexpectedEnumCase
         }
     }
 
     public static func write(_ value: HomeSectionFormatRecord, into buf: inout [UInt8]) {
         switch value {
-
-
+        
+        
         case .largeCards:
             writeInt(&buf, Int32(1))
-
-
+        
+        
         case .compactSongs:
             writeInt(&buf, Int32(2))
-
-
+        
+        
         case .mixed:
             writeInt(&buf, Int32(3))
-
+        
         }
     }
 }
@@ -4414,7 +4418,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sideb_core_checksum_method_sidebcore_get_cookie() != 6201) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_sideb_core_checksum_method_sidebcore_get_history() != 37635) {
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_history() != 47312) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_get_history_json() != 13697) {

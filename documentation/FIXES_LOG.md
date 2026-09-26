@@ -2402,3 +2402,41 @@
   - `apple/Tests/SideBTests/UpdateServiceTests.swift`
   - `documentation/FIXES_LOG.md`
 - **Verificación**: `swift test --package-path apple` aprobó 59 pruebas en 4 suites (incluyendo 10 pruebas especializadas de SemVer y omisión de versión).
+
+---
+
+### [FEAT-066] - Historial organizado por días, cronología de reproducción, soporte offline y secciones nativas en NativeTrackTableView
+
+- **Fecha**: 2026-09-26 17:01 (GMT-3)
+- **Agente / Rol**: Core (Rust) & UI/UX (Swift/macOS)
+- **Componente**: `HistoryView` | `NativeTrackTableView` | `LibraryViewModel` | `sideb-core` | `SQLite Db`
+- **Problema / Requerimiento**:
+  - `HistoryView` aplanaba todos los grupos de historial (`flatMap(\.items)`) perdiendo las fechas de reproducción ("Hoy", "Ayer", días de la semana y fechas específicas) y mostrando una lista única sin jerarquía temporal.
+  - Al escuchar música fuera de la vista de Historial, la notificación local de reproducción no se escuchaba de forma persistente y la recarga desde Google sobrescribía el estado antes de que los servidores indexaran el ping de estadísticas (`videostats/playback`), provocando que las pistas recientes no aparecieran de inmediato.
+  - Si el usuario no estaba autenticado o se encontraba desconectado, el historial arrojaba error o lista vacía ignorando las reproducciones registradas localmente en SQLite.
+- **Solución Aplicada**:
+  1. **Secciones nativas en `NativeTrackTableView`**:
+     - Introducida la estructura pública `TrackTableSection` y el enumerado interno `TableRowItem` para soportar tanto secciones con encabezados como listas planas continuas con 100% de retrocompatibilidad.
+     - Implementado `tableView(_:isGroupRow:)`, asignando `NativeTrackGroupRowView` y `NativeTrackSectionHeaderCellView` (con tipografía nativa, estilo uppercase y línea divisoria sutil) a 120 FPS sin hitches.
+     - Hover y menús contextuales desacoplados de los encabezados, mapeando clics directamente a la pista e inicializando la cola con el historial completo.
+  2. **Organización cronológica y normalización en español en `HistoryView`**:
+     - Agrupación por días de los últimos 30 días, ordenando las canciones de cada día de la más reciente a la más antigua.
+     - Función `normalizeDateTitle` para traducir y limpiar títulos provenientes de InnerTube ("Today" -> "Hoy", "Yesterday" -> "Ayer", días de la semana y meses en español).
+  3. **Sincronización instantánea y persistente en `LibraryViewModel`**:
+     - Observación global continua de `.sideBPlaybackRecorded` para insertar canciones al instante al principio de "Hoy" con 0 ms de retraso, sin depender de que `HistoryView` esté montada.
+     - `loadHistory` ahora admite ejecución sin sesión activa para recuperar el historial local de 30 días.
+  4. **Backend Rust y persistencia SQLite (`db.rs` y `lib.rs`)**:
+     - Nuevo método `Db::recent_plays` para consultar reproducciones ordenadas por `played_at DESC`.
+     - `get_history` fusiona reproducciones locales recientes (últimas 4 horas) al frente del grupo "Hoy" cuando está conectado, y agrupa localmente por días de calendario los últimos 30 días si el usuario está offline o sin sesión iniciada.
+- **Archivos Modificados**:
+  - `core/crates/sideb-core/src/db.rs`
+  - `core/crates/sideb-core/src/lib.rs`
+  - `apple/SideBCore.xcframework` (Reconstruido)
+  - `apple/Sources/SideB/Views/Common/NativeTrackTableView.swift`
+  - `apple/Sources/SideB/Views/History/HistoryView.swift`
+  - `apple/Sources/SideB/ViewModels/LibraryViewModel.swift`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**:
+  - Pruebas unitarias en Rust: 63/63 pasadas (`cargo test -p sideb-core`).
+  - Pruebas unitarias en Swift: 59/59 pasadas en 4 suites (`swift test`).
+

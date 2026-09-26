@@ -55,15 +55,22 @@ final class AlbumDetailViewModel {
             thumbnail: alb.thumbnail,
             duration: nil
         )
+        let tracks = alb.items
         NotificationCenter.default.post(
             name: .sideBLibraryAlbumToggled,
             object: nil,
-            userInfo: ["browseId": alb.browseId, "inLibrary": newStatus, "card": card]
+            userInfo: [
+                "browseId": alb.browseId,
+                "inLibrary": newStatus,
+                "card": card,
+                "tracks": tracks
+            ]
         )
 
         let targetId = alb.playlistId ?? alb.browseId
         do {
             try await core.likePlaylist(playlistId: targetId, like: newStatus)
+            NotificationCenter.default.post(name: .sideBSongLibraryChanged, object: nil)
         } catch {
             print("[AlbumDetailViewModel] Error al cambiar estado en biblioteca: \(error)")
             if var current = self.album, current.browseId == alb.browseId {
@@ -72,7 +79,12 @@ final class AlbumDetailViewModel {
                 NotificationCenter.default.post(
                     name: .sideBLibraryAlbumToggled,
                     object: nil,
-                    userInfo: ["browseId": alb.browseId, "inLibrary": !newStatus, "card": card]
+                    userInfo: [
+                        "browseId": alb.browseId,
+                        "inLibrary": !newStatus,
+                        "card": card,
+                        "tracks": tracks
+                    ]
                 )
             }
         }

@@ -506,23 +506,85 @@ impl SideBCore {
     }
 
     /// Fetch user's playback history grouped by day.
+    /// If online and logged in, merges remote YouTube Music history with recent local plays.
+    /// If offline or logged out, builds daily groups from the local SQLite history for the last 30 days.
     pub async fn get_history(&self) -> Result<Vec<HistoryGroupRecord>, SideBError> {
-        let client = self
-            .clients
-            .get(METADATA_CLIENT)
-            .ok_or_else(|| SideBError::Other {
-                message: "Metadata client missing".into(),
-            })?;
-        let groups = self.it.history(client).await.map_err(|e| SideBError::NetworkError {
-            message: e.to_string(),
-        })?;
-        Ok(groups
-            .into_iter()
-            .map(|g| HistoryGroupRecord {
-                title: g.title,
-                items: g.items.into_iter().map(SongItemRecord::from).collect(),
-            })
-            .collect())
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // 1. If logged in, attempt remote history from YouTube Music
+        let remote_groups_res = if self.is_logged_in() {
+            if let Some(client) = self.clients.get(METADATA_CLIENT) {
+                self.it.history(client).await.ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(remote_groups) = remote_groups_res {
+            let mut groups: Vec<HistoryGroupRecord> = remote_groups
+                .into_iter()
+                .map(|g| HistoryGroupRecord {
+                    title: g.title,
+                    items: g.items.into_iter().map(SongItemRecord::from).collect(),
+                })
+                .collect();
+
+            // Merge recent local plays from SQLite (last 4 hours) into the first group ("Today" / "Hoy")
+            // so newly played tracks appear with 0ms delay even before Google's videostats ping indexes.
+            const MERGE_WINDOW_SECS: i64 = 4 * 3600;
+            let recent_local = self.db.recent_plays(now.saturating_sub(MERGE_WINDOW_SECS));
+            if !recent_local.is_empty() {
+                if groups.is_empty() {
+                    groups.push(HistoryGroupRecord {
+                        title: "Hoy".into(),
+                        items: Vec::new(),
+                    });
+                }
+                let first_group = &mut groups[0];
+                for (_played_at, json) in recent_local.into_iter().rev() {
+                    if let Some(song_rec) = parse_song_record(&json) {
+                        if !first_group.items.iter().any(|item| item.video_id == song_rec.video_id) {
+                            first_group.items.insert(0, song_rec);
+                        }
+                    }
+                }
+            }
+            return Ok(groups);
+        }
+
+        // 2. Offline / logged out fallback: build history groups from SQLite for the last 30 days
+        const THIRTY_DAYS_SECS: i64 = 30 * 86400;
+        let local_plays = self.db.recent_plays(now.saturating_sub(THIRTY_DAYS_SECS));
+        if local_plays.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut groups: Vec<HistoryGroupRecord> = Vec::new();
+        let mut current_day_key: Option<i64> = None;
+
+        for (played_at, json) in local_plays {
+            let day_key = played_at / 86400;
+            if current_day_key != Some(day_key) {
+                current_day_key = Some(day_key);
+                let title = format_epoch_day(played_at, now);
+                groups.push(HistoryGroupRecord {
+                    title,
+                    items: Vec::new(),
+                });
+            }
+            if let Some(song_rec) = parse_song_record(&json) {
+                if let Some(last_group) = groups.last_mut() {
+                    last_group.items.push(song_rec);
+                }
+            }
+        }
+
+        Ok(groups)
     }
 
     /// Fetch playlist detail and tracks by id (e.g. "LM" for Liked Music, or VL...).
@@ -1581,3 +1643,90 @@ impl SideBCore {
             .collect()
     }
 }
+
+fn parse_song_record(json: &str) -> Option<SongItemRecord> {
+    if let Ok(item) = serde_json::from_str::<innertube::SongItem>(json) {
+        return Some(SongItemRecord::from(item));
+    }
+    let val: serde_json::Value = serde_json::from_str(json).ok()?;
+    let video_id = val.get("video_id")?.as_str()?.to_string();
+    let title = val.get("title").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let artists = val.get("artists").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let artist_id = val.get("artist_id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let album = val.get("album").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let album_id = val.get("album_id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let duration = val.get("duration").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let thumbnail = val.get("thumbnail").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    let set_video_id = val.get("set_video_id").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(String::from);
+    Some(SongItemRecord {
+        video_id,
+        title,
+        artists,
+        artist_id,
+        album,
+        album_id,
+        duration,
+        thumbnail,
+        set_video_id,
+        is_video: false,
+        is_upload: false,
+        library: None,
+    })
+}
+
+fn civil_date(epoch_secs: i64) -> (i64, u32, u32) {
+    let days = epoch_secs / 86400;
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn format_epoch_day(played_at: i64, now: i64) -> String {
+    let day_diff = (now / 86400) - (played_at / 86400);
+    if day_diff == 0 {
+        "Hoy".to_string()
+    } else if day_diff == 1 {
+        "Ayer".to_string()
+    } else if day_diff < 7 {
+        let dow = ((played_at / 86400) + 4) % 7;
+        let days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+        days[dow.rem_euclid(7) as usize].to_string()
+    } else {
+        let (_y, m, d) = civil_date(played_at);
+        let months = [
+            "enero", "febrero", "marzo", "abril", "mayo", "junio",
+            "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+        ];
+        let m_idx = (m.saturating_sub(1) as usize).min(11);
+        format!("{d} de {}", months[m_idx])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn civil_date_calculation() {
+        assert_eq!(civil_date(0), (1970, 1, 1));
+        // 2026-09-26 approx 1790441653
+        assert_eq!(civil_date(1790441653), (2026, 9, 26));
+    }
+
+    #[test]
+    fn format_epoch_day_relative() {
+        let now = 1790441653; // 2026-09-26 (Saturday)
+        assert_eq!(format_epoch_day(now, now), "Hoy");
+        assert_eq!(format_epoch_day(now - 86400, now), "Ayer");
+        assert_eq!(format_epoch_day(now - 2 * 86400, now), "Jueves");
+    }
+}
+

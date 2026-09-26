@@ -86,14 +86,30 @@ struct LibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task(id: libraryViewModel.selectedPageTab) {
-            await loadSelectedTabIfNeeded()
+            await reloadSelectedTab()
+        }
+        .onAppear {
+            Task { await reloadSelectedTab() }
         }
         .onChange(of: accountViewModel.isLoggedIn) { _, isLoggedIn in
             if isLoggedIn {
-                Task { await loadSelectedTabIfNeeded() }
+                Task { await reloadSelectedTab() }
             }
         }
+        .onChange(of: router.currentPage) { _, newPage in
+            if newPage == .library {
+                Task { await reloadSelectedTab() }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sideBLibraryRefreshRequested)) { _ in
+            Task { await reloadSelectedTab() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sideBSongLibraryChanged)) { _ in
+            if libraryViewModel.selectedPageTab == .songs {
+                Task { await libraryViewModel.loadSongs(core: rustCore) }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sideBLibraryAlbumToggled)) { _ in
             if libraryViewModel.selectedPageTab == .songs {
                 Task { await libraryViewModel.loadSongs(core: rustCore) }
             }
@@ -147,20 +163,24 @@ struct LibraryView: View {
                         .foregroundStyle(Color.sidebAccent)
                     }
                     .padding(.horizontal, 32)
+                    .padding(.vertical, 8)
                 }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .bottom) {
                 if libraryViewModel.isSongsLoadingMore {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(8)
-                        .padding(.bottom, 110)
-                } else if libraryViewModel.songsContinuation != nil {
-                    Button("Cargar más canciones") {
-                        Task { await libraryViewModel.loadMoreSongs(core: rustCore) }
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Cargando más canciones...")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                    .padding(8)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
                     .padding(.bottom, 110)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
         }
@@ -253,26 +273,8 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func loadSelectedTabIfNeeded() async {
-        guard accountViewModel.isLoggedIn else { return }
-        switch libraryViewModel.selectedPageTab {
-        case .songs:
-            if libraryViewModel.songs.isEmpty { await libraryViewModel.loadSongs(core: rustCore) }
-        case .artists:
-            if libraryViewModel.artists.isEmpty { await libraryViewModel.loadArtists(core: rustCore) }
-        case .playlists, .albums:
-            if libraryViewModel.playlists.isEmpty && libraryViewModel.albums.isEmpty {
-                await libraryViewModel.loadLibrary(core: rustCore)
-            }
-        }
-    }
-
     private func reloadSelectedTab() async {
         guard accountViewModel.isLoggedIn else { return }
-        switch libraryViewModel.selectedPageTab {
-        case .songs: await libraryViewModel.loadSongs(core: rustCore)
-        case .artists: await libraryViewModel.loadArtists(core: rustCore)
-        case .playlists, .albums: await libraryViewModel.loadLibrary(core: rustCore)
-        }
+        await libraryViewModel.reloadSelectedPageTab(core: rustCore)
     }
 }

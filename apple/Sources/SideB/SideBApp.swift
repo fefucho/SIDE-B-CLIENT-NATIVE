@@ -57,6 +57,7 @@ struct SideBApp: App {
                     guard !hasBootstrappedSession else { return }
                     hasBootstrappedSession = true
                     playerViewModel.rustCore = core
+                    libraryViewModel.rustCore = core
                     let hasSession = accountViewModel.restoreSession(core: core, storage: cookieStorage)
                     homeViewModel.prepareSession(identity: cookieStorage.homeCacheIdentity(), purgePrevious: false)
                     homeSessionRevision &+= 1

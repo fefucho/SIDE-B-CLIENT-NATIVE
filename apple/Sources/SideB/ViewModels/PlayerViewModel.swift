@@ -18,6 +18,7 @@ extension Notification.Name {
     public static let sideBPlaylistsChanged = Notification.Name("sideBPlaylistsChanged")
     public static let sideBRequestCreatePlaylist = Notification.Name("sideBRequestCreatePlaylist")
     public static let sideBSongLibraryChanged = Notification.Name("sideBSongLibraryChanged")
+    public static let sideBLibraryRefreshRequested = Notification.Name("sideBLibraryRefreshRequested")
 }
 
 // MARK: - Modelo de Recomendaciones

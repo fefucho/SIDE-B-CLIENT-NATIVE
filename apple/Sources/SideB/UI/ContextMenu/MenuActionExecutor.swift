@@ -347,6 +347,7 @@ final class MenuActionExecutor {
             Task {
                 do {
                     try await core.likePlaylist(playlistId: targetId, like: newStatus)
+                    NotificationCenter.default.post(name: .sideBSongLibraryChanged, object: nil)
                 } catch {
                     // Rollback optimista ante fallo
                     NotificationCenter.default.post(

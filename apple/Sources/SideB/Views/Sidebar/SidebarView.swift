@@ -4,7 +4,6 @@ import SideBCore
 // MARK: - SidebarView
 
 struct SidebarView: View {
-    @State private var isLibraryExpanded = true
     @Binding var isExpanded: Bool
     @Bindable var router: NavigationRouter
     @Bindable var accountViewModel: AccountViewModel
@@ -84,6 +83,19 @@ struct SidebarView: View {
                         } else {
                             likedRow
                         }
+
+                        sidebarRow(
+                            title: "Biblioteca",
+                            icon: "books.vertical.fill",
+                            iconColor: router.currentPage == .library ? .white : Color.sidebAccent,
+                            isSelected: router.currentPage == .library
+                        ) {
+                            if router.currentPage == .library {
+                                NotificationCenter.default.post(name: .sideBLibraryRefreshRequested, object: nil)
+                            } else {
+                                navigate(to: .library)
+                            }
+                        }
                         
                         sidebarRow(
                             title: "Historial",
@@ -96,51 +108,9 @@ struct SidebarView: View {
                     }
                     .padding(.horizontal, 10)
                     
-                    // Sección 3: Biblioteca con Switcher de Cápsula [ Playlists | Álbumes ]
+                    // Switcher de Cápsula [ Playlists | Álbumes ] y Lista
                     VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            Button {
-                                navigate(to: .library)
-                            } label: {
-                                Text("BIBLIOTECA")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .tracking(0.8)
-                                    .foregroundStyle(router.currentPage == .library ? Color.sidebAccent : Color.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Abrir biblioteca")
-
-                            Spacer()
-
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isLibraryExpanded.toggle()
-                                }
-                            } label: {
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .rotationEffect(.degrees(isLibraryExpanded ? 90 : 0))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel(isLibraryExpanded ? "Contraer biblioteca" : "Expandir biblioteca")
-
-                            if accountViewModel.isLoggedIn {
-                                Button {
-                                    NotificationCenter.default.post(name: .sideBRequestCreatePlaylist, object: nil)
-                                } label: {
-                                    Image(systemName: "plus")
-                                        .font(.system(size: 11, weight: .semibold))
-                                }
-                                .buttonStyle(.plain)
-                                .help("Nueva playlist")
-                                .accessibilityLabel("Nueva playlist")
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 3)
-
-                        if isLibraryExpanded {
-                        // Switcher segmentado estilo macOS moderno
+                        // Switcher segmentado estilo macOS moderno + botón (+)
                         HStack {
                             HStack(spacing: 2) {
                                 Button {
@@ -185,6 +155,19 @@ struct SidebarView: View {
                             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
                             Spacer()
+
+                            if accountViewModel.isLoggedIn {
+                                Button {
+                                    NotificationCenter.default.post(name: .sideBRequestCreatePlaylist, object: nil)
+                                } label: {
+                                    Image(systemName: "plus")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Nueva playlist")
+                                .accessibilityLabel("Nueva playlist")
+                            }
                         }
                         .padding(.horizontal, 14)
                         .padding(.top, 4)
@@ -293,7 +276,6 @@ struct SidebarView: View {
                                 }
                             }
                             .padding(.horizontal, 10)
-                        }
                         }
                     }
                 }
