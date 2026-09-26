@@ -1,6 +1,6 @@
 # Plan Maestro de Correcciones y Refactorización — Side B (2026)
 
-**Origen:** Auditoría Integral de Codex ([`AUDITORIA_INTEGRAL_2026-09-24.md`](file:///Users/stefano/Documents/PROGRAMACION%20PADRE/SIDE%20B%20RUST%20BASED%20PROJECTO/SIDE%20B/Cosas%20a%20mejorar/AUDITORIA_INTEGRAL_2026-09-24.md))  
+**Origen:** Auditoría Integral de Codex ([`2026-09-24-auditoria-integral-26-puntos.md`](../docs/audits/2026-09-24-auditoria-integral-26-puntos.md))  
 **Reglas del Proyecto Aplicables:** [`.agents/rules/00-project_rules.md`](file:///Users/stefano/Documents/PROGRAMACION%20PADRE/SIDE%20B%20RUST%20BASED%20PROJECTO/.agents/rules/00-project_rules.md), [`.agents/rules/10-backend.md`](file:///Users/stefano/Documents/PROGRAMACION%20PADRE/SIDE%20B%20RUST%20BASED%20PROJECTO/.agents/rules/10-backend.md), [`.agents/rules/20-frontend.md`](file:///Users/stefano/Documents/PROGRAMACION%20PADRE/SIDE%20B%20RUST%20BASED%20PROJECTO/.agents/rules/20-frontend.md), [`swiftui-pro/SKILL.md`](file:///Users/stefano/Documents/PROGRAMACION%20PADRE/SIDE%20B%20RUST%20BASED%20PROJECTO/.agents/skills/swiftui-pro/SKILL.md)  
 **Objetivo:** Resolver de forma metódica y estructurada los 26 hallazgos (A01 a A26) y la investigación de rendimiento en el Home Feed, organizados por dominios técnicos y prioridades de ingeniería.
 

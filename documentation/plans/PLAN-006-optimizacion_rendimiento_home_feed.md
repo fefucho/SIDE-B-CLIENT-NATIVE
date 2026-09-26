@@ -9,7 +9,7 @@
 
 ## 🎯 1. Objetivo y Alcance
 
-Erradicar la regresión de rendimiento identificada en la auditoría forense (`SIDE B/audits/PERFORMANCE_AUDIT_REPORT.md`), restaurando el scroll del **Feed de Inicio** a **120 FPS ProMotion continuos** sin micro-tirones ni degradación térmica:
+Erradicar la regresión de rendimiento identificada en la auditoría forense ([`2026-09-24-performance-home-feed.md`](../docs/audits/2026-09-24-performance-home-feed.md)), restaurando el scroll del **Feed de Inicio** a **120 FPS ProMotion continuos** sin micro-tirones ni degradación térmica:
 
 1. **Eliminar framebuffers Metal offscreen**: suprimir los `.drawingGroup()` residuales en tarjetas de mix y carruseles estándar.
 2. **Restaurar la virtualización vertical**: asegurar que `LazyVStack` sea el hijo inmediato y directo de `ScrollView`, descartando `VStack` envolventes no perezosos.
@@ -19,7 +19,7 @@ Erradicar la regresión de rendimiento identificada en la auditoría forense (`S
 
 ---
 
-## 🏗️ 2. Arquitectura de Rendimiento (Cumplimiento de `SCROLLING_PERFORMANCE_REPORT.md`)
+## 🏗️ 2. Arquitectura de Rendimiento (Cumplimiento de [`2026-09-17-scrolling-performance.md`](../docs/audits/2026-09-17-scrolling-performance.md))
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐

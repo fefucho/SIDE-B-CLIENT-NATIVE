@@ -21,11 +21,15 @@ def get_last_tag():
 def extract_fixes_since_tag(last_tag):
     fixes = []
     
-    # Si hay un tag anterior, comparamos el diff en FIXES_LOG.md
+    # Si hay un tag anterior, comparamos el diff en documentation/FIXES_LOG.md
+    fixes_file = "documentation/FIXES_LOG.md"
+    if not os.path.exists(fixes_file):
+        fixes_file = "FIXES_LOG.md"
+
     if last_tag:
         try:
             diff = subprocess.check_output(
-                ["git", "diff", f"{last_tag}..HEAD", "--", "FIXES_LOG.md"],
+                ["git", "diff", f"{last_tag}..HEAD", "--", fixes_file],
                 stderr=subprocess.DEVNULL
             ).decode()
             
@@ -37,23 +41,22 @@ def extract_fixes_since_tag(last_tag):
                     if m:
                         current_fix = {"id": m.group(1), "title": m.group(2).strip(), "details": []}
                         fixes.append(current_fix)
-                elif current_fix and line.startswith("+  - **Problema") or (current_fix and line.startswith("+  1. ")):
+                elif current_fix and (line.startswith("+  - **Problema") or line.startswith("+  1. ")):
                     clean = re.sub(r"^\+\s*", "", line).strip()
                     if clean and len(current_fix["details"]) < 2:
                         current_fix["details"].append(clean)
         except Exception:
             pass
 
-    # Si no se obtuvieron por diff (ej. archivos aún no comiteados o primer release),
-    # leemos los últimos fixes directamente de FIXES_LOG.md
-    if not fixes:
+    # Si no se obtuvieron por diff, leemos directamente del archivo
+    if not fixes and os.path.exists(fixes_file):
         try:
-            with open("FIXES_LOG.md", "r", encoding="utf-8") as f:
+            with open(fixes_file, "r", encoding="utf-8") as f:
                 content = f.read()
             pattern = r"### \[((?:FIX|FEAT)-\d+)\]\s*-\s*([^\n]+)"
             for m in re.finditer(pattern, content):
                 fixes.append({"id": m.group(1), "title": m.group(2).strip(), "details": []})
-                if len(fixes) >= 5:  # Tomar los 5 más recientes
+                if len(fixes) >= 5:
                     break
         except Exception:
             pass

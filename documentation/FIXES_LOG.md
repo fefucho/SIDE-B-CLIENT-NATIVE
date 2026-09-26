@@ -612,7 +612,7 @@
      - **Historial (`HistoryView.swift`)**: Migrado a `NativeTrackTableView` con carga unificada de reproducciones recientes.
      - **Búsqueda en Inicio (`HomeView.swift`)**: Búsqueda rápida renderizada con `NativeTrackTableView` ocupando el viewport completo mientras el buscador se mantiene fijo en la parte superior.
   4. **Documentación Arquitectónica**:
-     - Creación de [`SCROLLING_PERFORMANCE_REPORT.md`](SCROLLING_PERFORMANCE_REPORT.md) con el informe técnico forense y las directrices para futuros componentes.
+     - Creación de [`2026-09-17-scrolling-performance.md`](docs/audits/2026-09-17-scrolling-performance.md) con el informe técnico forense y las directrices para futuros componentes.
 - **Archivos Modificados**:
   - `SIDE B/apple/Sources/SideB/Views/Common/NativeTrackTableView.swift`
   - `SIDE B/apple/Sources/SideB/Views/Detail/PlaylistDetailView.swift`
@@ -620,7 +620,7 @@
   - `SIDE B/apple/Sources/SideB/Views/Fullscreen/FullscreenNowPlayingView.swift`
   - `SIDE B/apple/Sources/SideB/Views/History/HistoryView.swift`
   - `SIDE B/apple/Sources/SideB/Views/Home/HomeView.swift`
-  - `SIDE B/SCROLLING_PERFORMANCE_REPORT.md` (Nuevo)
+  - `SIDE B/docs/audits/2026-09-17-scrolling-performance.md` (Nuevo)
   - `SIDE B/FIXES_LOG.md`
 - **Verificación**:
   - Compilación limpia con `swift build` y empaquetado exitoso mediante `compile_and_run.sh --debug`.
@@ -1141,7 +1141,7 @@
   - [`SIDE B/apple/Sources/SideB/Views/Home/HomeView.swift`](apple/Sources/SideB/Views/Home/HomeView.swift)
   - [`SIDE B/apple/Sources/SideB/Views/Detail/ArtistDetailView.swift`](apple/Sources/SideB/Views/Detail/ArtistDetailView.swift)
   - [`SIDE B/plans/PLAN-006-optimizacion_rendimiento_home_feed.md`](plans/PLAN-006-optimizacion_rendimiento_home_feed.md)
-  - [`SIDE B/audits/PERFORMANCE_AUDIT_REPORT.md`](audits/PERFORMANCE_AUDIT_REPORT.md)
+  - [`SIDE B/docs/audits/2026-09-24-performance-home-feed.md`](docs/audits/2026-09-24-performance-home-feed.md)
 - **Verificación**:
   - `swift build`: compilación limpia y validada en Swift 6 con código 0 (`Build complete! (8,99 s)`).
   - Aislamiento de concurrencia y `@MainActor` verificado sin warnings de aislamiento de datos en `Equatable`.
@@ -1150,7 +1150,7 @@
 
 ### [FIX-031] - 2026-09-24: Ejecución Integral del Plan de Auditoría de UI (Sprints 1, 2 y 3)
 
-- **Objetivo**: Ejecutar exhaustivamente todas las directivas de corrección identificadas en la auditoría forense de UI (`audits/UI_AUDIT_REPORT.md`): erradicar zombies, garantizar persistencia segura de datos y sesión de YouTube, desacoplar lógica de vistas a ViewModels (`HomeViewModel`), unificar listas a `NativeTrackTableView`, centralizar mix/radios en `PlayerViewModel` y limpiar deuda técnica.
+- **Objetivo**: Ejecutar exhaustivamente todas las directivas de corrección identificadas en la auditoría forense de UI ([`2026-09-24-ui-audit-report.md`](docs/audits/2026-09-24-ui-audit-report.md)): erradicar zombies, garantizar persistencia segura de datos y sesión de YouTube, desacoplar lógica de vistas a ViewModels (`HomeViewModel`), unificar listas a `NativeTrackTableView`, centralizar mix/radios en `PlayerViewModel` y limpiar deuda técnica.
 - **Solución Aplicada**:
   1. **Sprint 1 — Bugs Críticos y Funcionales**:
      - `SideBApp.swift`: Migrado el almacenamiento de SQLite y caché de Rust Core de `NSTemporaryDirectory()` a `Application Support/SideB` persistente, evitando pérdidas silenciosas de sesión o tokens ante purgas de memoria del SO.

@@ -5,7 +5,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 VERSION_FILE="version.env"
-FIXES_FILE="FIXES_LOG.md"
+FIXES_FILE="documentation/FIXES_LOG.md"
+if [ ! -f "$FIXES_FILE" ]; then
+    FIXES_FILE="FIXES_LOG.md"
+fi
 
 if [ ! -f "$VERSION_FILE" ]; then
     echo "❌ Error: no se encontró $VERSION_FILE"

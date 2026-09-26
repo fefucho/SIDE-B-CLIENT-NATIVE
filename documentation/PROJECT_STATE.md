@@ -1,8 +1,8 @@
 # 🎵 Side B (v2) - Estado del Proyecto y Hoja de Ruta Viva
 
-> **Última actualización**: 2026-09-18  
-> **Estado general**: Enfoque prioritario en macOS nativo (Fase 1 completada, Gobernanza simplificada, Ejecución de PLAN-001 en curso).  
-> **Objetivo central**: Reconstruir el cliente nativo de YouTube Music para macOS combinando la excelencia visual de **Side B Old** (Liquid Glass, 120Hz ProMotion, centrado de isla flotante) con el rendimiento ultra-rápido del motor en Rust de **Limusic** (InnerTube nativo, PoToken, SQLite).
+> **Última actualización**: 2026-09-26  
+> **Estado general**: macOS nativo completado hasta PLAN-008, estabilizado y verificado mediante 60 correcciones técnicas (FIX-001 al FIX-059).  
+> **Objetivo central**: Reconstruir el cliente nativo de YouTube Music para macOS combinando la excelencia visual de **Side B Old** (Liquid Glass, ProMotion, centrado de isla flotante) con el rendimiento del motor en Rust (InnerTube nativo, PoToken, SQLite persistente).
 
 ---
 
@@ -55,7 +55,7 @@
 
 ---
 
-## 🗺️ 4. Las 5 Grandes Epics (Roadmap Estructural Sincerado)
+## 🗺️ 4. Las Epics Estructurales (Roadmap y Estado Actual)
 
 1. ✅ [`PLAN-001: Pipeline de Audio y MVP Flotante`](plans/PLAN-001-motor_audio_avplayer.md)
    - Filtrado AAC (itag 140) en Rust e InnerTube con score prioritario sobre Opus.
@@ -90,6 +90,17 @@
    - [x] Selector en cápsula de 3 pestañas: Cola (`Queue`), Letras (`Lyrics`), Recomendados (`Related`).
    - [x] Motor de letras sincronizadas `SyncedLyricsView` con auto-scroll a 120Hz y salto al clic.
    - [ ] Fallback dual a LRCLIB en Rust ante temas sin letras sincronizadas en YouTube Music.
+6. ✅ [`PLAN-006: Estabilización y Rendimiento Home Feed`](plans/PLAN-006-optimizacion_rendimiento_home_feed.md) (100% completado)
+   - [x] Eliminación de pases Metal offscreen y `.drawingGroup()` residuales en carruseles.
+   - [x] Virtualización directa `LazyVStack` como hijo inmediato de `ScrollView`.
+   - [x] Aislamiento de re-renders a 10Hz en celdas de canciones con `QuickPickSongCell: View, Equatable`.
+   - [x] Blindaje de identificadores `ForEach` y optimización de miniaturas CDN a 96px (`ImageURLHelper`).
+7. ✅ [`PLAN-007: Menús Contextuales por Entidad y Contexto`](plans/PLAN-007-menus-contextuales.md) (100% completado)
+   - [x] Catálogo unificado de acciones para canciones, álbumes, artistas, playlists y radios.
+   - [x] Paridad estricta entre clics secundarios (AppKit) y botones de opciones «…» (SwiftUI).
+8. ✅ [`PLAN-008: Corrección y Ejecución de Acciones en Menús`](plans/PLAN-008-fix-acciones-menus-contextuales.md) (100% completado)
+   - [x] Solución al ciclo de retención y despacho target/action en `AppKitMenuAdapter.swift`.
+   - [x] Implementación del protocolo `NSMenuItemValidation` para habilitación/deshabilitación reactiva.
 
 ---
 
@@ -137,7 +148,7 @@
     - Bloqueo de altura de cabecera a 180pt en `PlaylistDetailView` y `AlbumDetailView`, eliminando el espacio vertical vacío y anclando los botones de Reproducir/Aleatorio en la base de la portada.
     - Hover de Fuente Única de Verdad (`NativeTrackTableViewInternal.hoveredRowIndex` + observación de `boundsDidChangeNotification` en `NSClipView`), erradicando las marcas múltiples de hover al scrollear.
     - Extensión de la arquitectura `NativeTrackTableView` a la Cola de Reproducción (`FullscreenNowPlayingView`), Historial (`HistoryView`) y Búsquedas en Inicio (`HomeView`).
-    - Publicación del informe técnico completo en [`SCROLLING_PERFORMANCE_REPORT.md`](SCROLLING_PERFORMANCE_REPORT.md).
+    - Publicación del informe técnico completo en [`2026-09-17-scrolling-performance.md`](docs/audits/2026-09-17-scrolling-performance.md).
   - `[FIX-019]`: **Integración Completa y Modular del Feed de Inicio de YouTube Music (PLAN-002)**:
     - Extensión de contratos UniFFI con `HomeChipRecord`, `HomePageRecord` y actualización de `HomeSectionRecord` (con `moreBrowseId` y `moreParams`).
     - Métodos tipados `get_home_page(chip_params:)` y `get_home_continuation(token:)` eliminando el traspaso de JSON crudo en la interfaz.
@@ -207,5 +218,18 @@
     - Portada interactiva: oscurecimiento con icono de `play.fill` / `pause.fill` en hover, y animación viva de 4 barras ecualizadoras (`AudioEqualizerBarsView`) en reproducción (Foto 2).
     - Subtítulo interactivo con enlaces clicables individuales a la página del artista y del álbum separados por punto medio.
     - Menú contextual `...` en el extremo derecho y divisor inferior sutil.
+- **2026-09-25 a 2026-09-26**:
+  - `[FIX-047]`: **Ejecución Integral de Fase 4 (Auditoría Integral)**: Búsqueda reactiva sin carreras asíncronas, aislamiento de filtros, Spotlight responsivo, historial unificado y ámbito de ventana seguro.
+  - `[FIX-048]`: **Ejecución Integral de Fase 5 (Auditoría Integral)**: Feed de inicio resiliente, tipado estricto de catálogo, conexión de valoraciones de usuario y desacoplamiento de biblioteca.
+  - `[FIX-049]`: **PLAN-008 Cerrado al 100%**: Corrección de despacho y validación en menús contextuales en AppKit y SwiftUI (`NSMenuItemValidation`, `AppKitMenuAdapter`).
+  - `[FIX-050]` & `[FIX-051]`: Estandarización de iconos y visibilidad universal en menús contextuales para macOS 27+ y SwiftUI.
+  - `[FIX-052]`: Auditoría y refinamiento estético macOS 26/27: geometría concéntrica, realce neutro en reproducción y tokens de reborde.
+  - `[FIX-053]`: Sincronización de navegación en barra lateral con modo Fullscreen y corrección de foco/escape en Spotlight (⌘K).
+  - `[FIX-054]`: Corrección de altura colapsada en menú de respuestas rápidas (SearchView) y foco inmediato.
+  - `[FIX-055]`: Unificación de fondo en esquina superior de barra lateral y controles de ventana (Traffic Lights).
+  - `[FIX-056]`: Corrección de capa invisible y bloqueo de clics en barra lateral durante modo Fullscreen.
+  - `[FIX-057]`: Optimización ergonómica de la cola de reproducción (~14 a 14.5 canciones visibles en altura estándar).
+  - `[FIX-058]`: Ventana borderless transparente con controles header SwiftUI nativos (erradicación definitiva de NSToolbar).
+  - `[FIX-059]`: Control de volumen como overlay flotante sin desplazamiento de layout en PlayerBarView.
 
 
