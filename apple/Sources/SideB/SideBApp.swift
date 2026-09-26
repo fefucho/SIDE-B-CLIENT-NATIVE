@@ -62,9 +62,12 @@ struct SideBApp: App {
                     homeSessionRevision &+= 1
                     if hasSession {
                         await accountViewModel.fetchAccount(core: core)
+                        playerViewModel.switchPlaybackSession(to: PlaybackStateStore.identity(for: accountViewModel.account, cookieStorage: cookieStorage))
                         if accountViewModel.isLoggedIn {
                             await libraryViewModel.loadLibrary(core: core)
                         }
+                    } else {
+                        playerViewModel.switchPlaybackSession(to: "guest")
                     }
                     Task {
                         await UpdateService.shared.checkForUpdates(manual: false)
@@ -72,11 +75,15 @@ struct SideBApp: App {
                 }
                 .sheet(isPresented: $showLoginSheet) {
                     LoginSheet(cookieStorage: cookieStorage, rustCore: core) {
+                        let loginIdentity = PlaybackStateStore.identity(for: nil, cookieStorage: cookieStorage)
+                        playerViewModel.switchPlaybackSession(to: loginIdentity)
                         libraryViewModel.clear()
                         homeViewModel.prepareSession(identity: cookieStorage.homeCacheIdentity())
                         homeSessionRevision &+= 1
                         Task {
                             await accountViewModel.fetchAccount(core: core)
+                            guard PlaybackStateStore.identity(for: nil, cookieStorage: cookieStorage) == loginIdentity else { return }
+                            playerViewModel.switchPlaybackSession(to: PlaybackStateStore.identity(for: accountViewModel.account, cookieStorage: cookieStorage))
                             await libraryViewModel.loadLibrary(core: core)
                         }
                     }
@@ -137,6 +144,7 @@ struct WindowRootView: View {
                         showLoginSheet = true
                     },
                     onLogout: {
+                        playerViewModel.switchPlaybackSession(to: "guest")
                         libraryViewModel.clear()
                         homeViewModel.prepareSession(identity: cookieStorage.homeCacheIdentity())
                         homeSessionRevision &+= 1
@@ -302,6 +310,7 @@ struct WindowRootView: View {
             menuContext.createPlaylistSheet = $isCreatePlaylistPresented
             let sessionRevision = $homeSessionRevision
             menuContext.onLogout = { [libraryViewModel, homeViewModel, cookieStorage, router] in
+                playerViewModel.switchPlaybackSession(to: "guest")
                 libraryViewModel.clear()
                 homeViewModel.prepareSession(identity: cookieStorage.homeCacheIdentity())
                 sessionRevision.wrappedValue &+= 1
@@ -311,6 +320,12 @@ struct WindowRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             DispatchQueue.main.async { AppMenuBarOrganizer.normalize() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            playerViewModel.flushPlaybackState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
+            playerViewModel.flushPlaybackState()
         }
         .preferredColorScheme(.dark)
         .tint(Color.sidebAccent)

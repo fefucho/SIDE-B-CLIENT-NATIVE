@@ -2418,6 +2418,72 @@ public func FfiConverterTypeHistoryGroupRecord_lower(_ value: HistoryGroupRecord
 }
 
 
+public struct HomeArtistRunRecord {
+    public var text: String
+    public var id: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, id: String?) {
+        self.text = text
+        self.id = id
+    }
+}
+
+
+
+extension HomeArtistRunRecord: Equatable, Hashable {
+    public static func ==(lhs: HomeArtistRunRecord, rhs: HomeArtistRunRecord) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.id != rhs.id {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(id)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHomeArtistRunRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HomeArtistRunRecord {
+        return
+            try HomeArtistRunRecord(
+                text: FfiConverterString.read(from: &buf),
+                id: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: HomeArtistRunRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionString.write(value.id, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHomeArtistRunRecord_lift(_ buf: RustBuffer) throws -> HomeArtistRunRecord {
+    return try FfiConverterTypeHomeArtistRunRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHomeArtistRunRecord_lower(_ value: HomeArtistRunRecord) -> RustBuffer {
+    return FfiConverterTypeHomeArtistRunRecord.lower(value)
+}
+
+
 public struct HomeChipRecord {
     public var title: String
     public var params: String
@@ -2495,10 +2561,12 @@ public struct HomeItemRecord {
     public var artistId: String?
     public var album: String?
     public var albumId: String?
+    public var artistRuns: [HomeArtistRunRecord]
+    public var explicit: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(kind: String, id: String, title: String, subtitle: String?, thumbnail: String?, duration: String?, artists: String?, artistId: String?, album: String?, albumId: String?) {
+    public init(kind: String, id: String, title: String, subtitle: String?, thumbnail: String?, duration: String?, artists: String?, artistId: String?, album: String?, albumId: String?, artistRuns: [HomeArtistRunRecord], explicit: Bool) {
         self.kind = kind
         self.id = id
         self.title = title
@@ -2509,6 +2577,8 @@ public struct HomeItemRecord {
         self.artistId = artistId
         self.album = album
         self.albumId = albumId
+        self.artistRuns = artistRuns
+        self.explicit = explicit
     }
 }
 
@@ -2546,6 +2616,12 @@ extension HomeItemRecord: Equatable, Hashable {
         if lhs.albumId != rhs.albumId {
             return false
         }
+        if lhs.artistRuns != rhs.artistRuns {
+            return false
+        }
+        if lhs.explicit != rhs.explicit {
+            return false
+        }
         return true
     }
 
@@ -2560,6 +2636,8 @@ extension HomeItemRecord: Equatable, Hashable {
         hasher.combine(artistId)
         hasher.combine(album)
         hasher.combine(albumId)
+        hasher.combine(artistRuns)
+        hasher.combine(explicit)
     }
 }
 
@@ -2580,7 +2658,9 @@ public struct FfiConverterTypeHomeItemRecord: FfiConverterRustBuffer {
                 artists: FfiConverterOptionString.read(from: &buf), 
                 artistId: FfiConverterOptionString.read(from: &buf), 
                 album: FfiConverterOptionString.read(from: &buf), 
-                albumId: FfiConverterOptionString.read(from: &buf)
+                albumId: FfiConverterOptionString.read(from: &buf),
+                artistRuns: FfiConverterSequenceTypeHomeArtistRunRecord.read(from: &buf),
+                explicit: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -2595,6 +2675,8 @@ public struct FfiConverterTypeHomeItemRecord: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.artistId, into: &buf)
         FfiConverterOptionString.write(value.album, into: &buf)
         FfiConverterOptionString.write(value.albumId, into: &buf)
+        FfiConverterSequenceTypeHomeArtistRunRecord.write(value.artistRuns, into: &buf)
+        FfiConverterBool.write(value.explicit, into: &buf)
     }
 }
 
@@ -2690,14 +2772,16 @@ public func FfiConverterTypeHomePageRecord_lower(_ value: HomePageRecord) -> Rus
 
 public struct HomeSectionRecord {
     public var title: String
+    public var format: HomeSectionFormatRecord
     public var items: [HomeItemRecord]
     public var moreBrowseId: String?
     public var moreParams: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(title: String, items: [HomeItemRecord], moreBrowseId: String?, moreParams: String?) {
+    public init(title: String, format: HomeSectionFormatRecord, items: [HomeItemRecord], moreBrowseId: String?, moreParams: String?) {
         self.title = title
+        self.format = format
         self.items = items
         self.moreBrowseId = moreBrowseId
         self.moreParams = moreParams
@@ -2709,6 +2793,9 @@ public struct HomeSectionRecord {
 extension HomeSectionRecord: Equatable, Hashable {
     public static func ==(lhs: HomeSectionRecord, rhs: HomeSectionRecord) -> Bool {
         if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.format != rhs.format {
             return false
         }
         if lhs.items != rhs.items {
@@ -2725,6 +2812,7 @@ extension HomeSectionRecord: Equatable, Hashable {
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(title)
+        hasher.combine(format)
         hasher.combine(items)
         hasher.combine(moreBrowseId)
         hasher.combine(moreParams)
@@ -2740,6 +2828,7 @@ public struct FfiConverterTypeHomeSectionRecord: FfiConverterRustBuffer {
         return
             try HomeSectionRecord(
                 title: FfiConverterString.read(from: &buf), 
+                format: FfiConverterTypeHomeSectionFormatRecord.read(from: &buf),
                 items: FfiConverterSequenceTypeHomeItemRecord.read(from: &buf), 
                 moreBrowseId: FfiConverterOptionString.read(from: &buf), 
                 moreParams: FfiConverterOptionString.read(from: &buf)
@@ -2748,6 +2837,7 @@ public struct FfiConverterTypeHomeSectionRecord: FfiConverterRustBuffer {
 
     public static func write(_ value: HomeSectionRecord, into buf: inout [UInt8]) {
         FfiConverterString.write(value.title, into: &buf)
+        FfiConverterTypeHomeSectionFormatRecord.write(value.format, into: &buf)
         FfiConverterSequenceTypeHomeItemRecord.write(value.items, into: &buf)
         FfiConverterOptionString.write(value.moreBrowseId, into: &buf)
         FfiConverterOptionString.write(value.moreParams, into: &buf)
@@ -3683,6 +3773,77 @@ public func FfiConverterTypeStreamPlaybackInfo_lower(_ value: StreamPlaybackInfo
     return FfiConverterTypeStreamPlaybackInfo.lower(value)
 }
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum HomeSectionFormatRecord {
+
+    case largeCards
+    case compactSongs
+    case mixed
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeHomeSectionFormatRecord: FfiConverterRustBuffer {
+    typealias SwiftType = HomeSectionFormatRecord
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> HomeSectionFormatRecord {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .largeCards
+
+        case 2: return .compactSongs
+
+        case 3: return .mixed
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: HomeSectionFormatRecord, into buf: inout [UInt8]) {
+        switch value {
+
+
+        case .largeCards:
+            writeInt(&buf, Int32(1))
+
+
+        case .compactSongs:
+            writeInt(&buf, Int32(2))
+
+
+        case .mixed:
+            writeInt(&buf, Int32(3))
+
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHomeSectionFormatRecord_lift(_ buf: RustBuffer) throws -> HomeSectionFormatRecord {
+    return try FfiConverterTypeHomeSectionFormatRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeHomeSectionFormatRecord_lower(_ value: HomeSectionFormatRecord) -> RustBuffer {
+    return FfiConverterTypeHomeSectionFormatRecord.lower(value)
+}
+
+
+
+extension HomeSectionFormatRecord: Equatable, Hashable {}
+
+
+
 
 public enum SideBError {
 
@@ -3978,6 +4139,31 @@ fileprivate struct FfiConverterSequenceTypeHistoryGroupRecord: FfiConverterRustB
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeHistoryGroupRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeHomeArtistRunRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [HomeArtistRunRecord]
+
+    public static func write(_ value: [HomeArtistRunRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeHomeArtistRunRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [HomeArtistRunRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [HomeArtistRunRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeHomeArtistRunRecord.read(from: &buf))
         }
         return seq
     }

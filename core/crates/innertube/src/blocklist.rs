@@ -135,6 +135,10 @@ mod tests {
             is_video: false,
             is_upload: false,
             explicit: false,
+            artists: None,
+            artist_id: None,
+            album: None,
+            album_id: None,
         }
     }
 

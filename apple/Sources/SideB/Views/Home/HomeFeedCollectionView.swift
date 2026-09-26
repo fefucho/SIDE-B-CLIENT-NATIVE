@@ -43,6 +43,9 @@ struct HomeFeedCollectionView: NSViewRepresentable {
         collection.onHoverPosition = { [weak coordinator] point in
             coordinator?.updateHover(at: point)
         }
+        collection.onViewportMoved = { [weak coordinator] in
+            coordinator?.scheduleHoverUpdate()
+        }
 
         let scroll = NSScrollView()
         scroll.drawsBackground = false
@@ -50,7 +53,7 @@ struct HomeFeedCollectionView: NSViewRepresentable {
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.horizontalScrollElasticity = .none
-        scroll.verticalScrollElasticity = .allowed
+        scroll.verticalScrollElasticity = .none
         scroll.automaticallyAdjustsContentInsets = false
         scroll.contentInsets = NSEdgeInsets(top: 10, left: 0, bottom: 120, right: 0)
         scroll.documentView = collection
@@ -73,6 +76,7 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             collection.delegate = nil
             collection.onActivateSelection = nil
             collection.onHoverPosition = nil
+            collection.onViewportMoved = nil
         }
         coordinator.collection = nil
         coordinator.dataSource = nil
@@ -82,7 +86,7 @@ struct HomeFeedCollectionView: NSViewRepresentable {
         let coordinator = context.coordinator
         let old = coordinator.parent
         coordinator.parent = self
-        guard let collection = scroll.documentView as? HomeNativeCollectionView else { return }
+        guard scroll.documentView is HomeNativeCollectionView else { return }
         if old.revision != revision || old.hasMore != hasMore {
             coordinator.applyContent()
             if old.selectedChip != selectedChip {
@@ -110,7 +114,11 @@ struct HomeFeedCollectionView: NSViewRepresentable {
         var dataSource: NSCollectionViewDiffableDataSource<String, String>?
         private var itemByID: [String: HomeItemPresentation] = [:]
         private var sectionByID: [String: HomeSectionPresentation] = [:]
+        private var appliedSections: [HomeSectionPresentation] = []
+        private var appliedSectionIDs: [String] = []
+        private var appliedHasMore = false
         private weak var hoveredItem: HomeCollectionItem?
+        private var hoverUpdateScheduled = false
 
         init(parent: HomeFeedCollectionView) { self.parent = parent }
         deinit { NotificationCenter.default.removeObserver(self) }
@@ -133,12 +141,13 @@ struct HomeFeedCollectionView: NSViewRepresentable {
                 let header = collection.makeSupplementaryView(
                     ofKind: kind, withIdentifier: HomeSectionHeaderView.identifier, for: indexPath
                 ) as! HomeSectionHeaderView
-                let sectionIDs = self.dataSource?.snapshot().sectionIdentifiers ?? []
-                if indexPath.section < sectionIDs.count,
-                   let section = self.sectionByID[sectionIDs[indexPath.section]] {
-                    header.configure(title: section.title, showsMore: section.isNavigableMore) { [weak self] in
-                        self?.navigateMore(in: section.id)
-                    }
+                if indexPath.section < self.appliedSectionIDs.count,
+                   let section = self.sectionByID[self.appliedSectionIDs[indexPath.section]] {
+                    header.configure(title: section.title, showsMore: section.isNavigableMore,
+                                     showsArrows: section.items.count > 4,
+                                     previous: { [weak self] in self?.scrollSection(section.id, direction: -1) },
+                                     next: { [weak self] in self?.scrollSection(section.id, direction: 1) },
+                                     action: { [weak self] in self?.navigateMore(in: section.id) })
                 }
                 return header
             }
@@ -147,6 +156,35 @@ struct HomeFeedCollectionView: NSViewRepresentable {
 
         func applyContent() {
             guard let dataSource, let collection else { return }
+            let unchangedPrefix = !appliedSections.isEmpty && parent.sections.count >= appliedSections.count &&
+                zip(appliedSections, parent.sections).allSatisfy { $0 == $1 }
+
+            if unchangedPrefix {
+                let appended = parent.sections.dropFirst(appliedSections.count)
+                guard !appended.isEmpty || appliedHasMore != parent.hasMore else {
+                    updateLoadMore()
+                    return
+                }
+                var snapshot = dataSource.snapshot()
+                if appliedHasMore { snapshot.deleteSections([Self.footerSection]) }
+                for section in appended {
+                    sectionByID[section.id] = section
+                    for item in section.items { itemByID[item.id] = item }
+                    snapshot.appendSections([section.id])
+                    snapshot.appendItems(section.items.map(\.id), toSection: section.id)
+                }
+                if parent.hasMore {
+                    snapshot.appendSections([Self.footerSection])
+                    snapshot.appendItems([Self.footerItem], toSection: Self.footerSection)
+                }
+                appliedSections = parent.sections
+                appliedHasMore = parent.hasMore
+                appliedSectionIDs = snapshot.sectionIdentifiers
+                dataSource.apply(snapshot, animatingDifferences: false)
+                updateLoadMore()
+                return
+            }
+
             sectionByID = Dictionary(uniqueKeysWithValues: parent.sections.map { ($0.id, $0) })
             itemByID = Dictionary(uniqueKeysWithValues: parent.sections.flatMap { $0.items.map { ($0.id, $0) } })
 
@@ -159,6 +197,9 @@ struct HomeFeedCollectionView: NSViewRepresentable {
                 snapshot.appendSections([Self.footerSection])
                 snapshot.appendItems([Self.footerItem], toSection: Self.footerSection)
             }
+            appliedSections = parent.sections
+            appliedHasMore = parent.hasMore
+            appliedSectionIDs = snapshot.sectionIdentifiers
             dataSource.apply(snapshot, animatingDifferences: false)
             for indexPath in collection.indexPathsForVisibleItems() {
                 guard let identifier = dataSource.itemIdentifier(for: indexPath),
@@ -184,17 +225,17 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             let item: NSCollectionLayoutItem
             let group: NSCollectionLayoutGroup
             let section: NSCollectionLayoutSection
-            if spec.style == .quickPicks {
+            if spec.style == .compactSong {
                 let row = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(56))
                 item = NSCollectionLayoutItem(layoutSize: row)
                 let groupSize = NSCollectionLayoutSize(
-                    widthDimension: .absolute(compact ? 286 : 330), heightDimension: .absolute(172)
+                    widthDimension: .absolute(compact ? 286 : 330), heightDimension: .absolute(230)
                 )
-                group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitem: item, count: 3)
-                group.interItemSpacing = .fixed(2)
+                group = NSCollectionLayoutGroup.vertical(layoutSize: groupSize, subitem: item, count: 4)
+                group.interItemSpacing = .fixed(1)
             } else {
-                let cardWidth: CGFloat = compact ? 136 : 156
-                let height: CGFloat = compact ? 188 : 208
+                let cardWidth: CGFloat = compact ? 140 : 160
+                let height = cardWidth + HomeItemView.largeCardTextHeight
                 let size = NSCollectionLayoutSize(widthDimension: .absolute(cardWidth), heightDimension: .absolute(height))
                 item = NSCollectionLayoutItem(layoutSize: size)
                 group = NSCollectionLayoutGroup.horizontal(layoutSize: size, subitems: [item])
@@ -209,10 +250,6 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             )
             section.boundarySupplementaryItems = [header]
             return section
-        }
-
-        private func sectionID(at indexPath: IndexPath) -> String {
-            dataSource?.snapshot().sectionIdentifiers[safe: indexPath.section] ?? ""
         }
 
         private func configure(_ cell: HomeCollectionItem, payload: HomeItemPresentation, style: HomeSectionStyle) {
@@ -257,11 +294,9 @@ struct HomeFeedCollectionView: NSViewRepresentable {
 
         private func navigateArtist(itemID: String) {
             guard let record = itemByID[itemID]?.record else { return }
-            if let id = record.artistId, !id.isEmpty {
+            if let id = record.artistId ?? record.artistRuns.first(where: { $0.id?.isEmpty == false })?.id,
+               !id.isEmpty {
                 parent.onNavigate(.artist(browseId: id))
-            } else {
-                let artistQuery = HomeItemView.cleanArtistName(from: record)
-                parent.onNavigate(.search(query: artistQuery))
             }
         }
 
@@ -269,11 +304,22 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             guard let record = itemByID[itemID]?.record else { return }
             if let id = record.albumId, !id.isEmpty {
                 parent.onNavigate(.album(browseId: id))
-            } else if let album = record.album, !album.isEmpty {
-                parent.onNavigate(.search(query: album))
-            } else if let albumQuery = HomeItemView.cleanAlbumName(from: record) {
-                parent.onNavigate(.search(query: albumQuery))
             }
+        }
+
+        private func scrollSection(_ sectionID: String, direction: Int) {
+            guard let collection,
+                  let sectionIndex = parent.sections.firstIndex(where: { $0.id == sectionID }) else { return }
+            let itemCount = parent.sections[sectionIndex].items.count
+            guard itemCount > 0 else { return }
+            let visibleStep = parent.sections[sectionIndex].style == .compactSong ? 4 : 1
+            let visible = collection.indexPathsForVisibleItems()
+                .filter { $0.section == sectionIndex }
+                .map(\.item)
+            let anchor = direction > 0 ? (visible.max() ?? 0) + visibleStep : max(0, (visible.min() ?? 0) - visibleStep)
+            let target = min(itemCount - 1, anchor)
+            collection.scrollToItems(at: [IndexPath(item: target, section: sectionIndex)],
+                                     scrollPosition: direction > 0 ? .right : .left)
         }
 
         private func navigateMore(in sectionID: String) {
@@ -358,6 +404,20 @@ struct HomeFeedCollectionView: NSViewRepresentable {
         }
 
         @objc func clipBoundsChanged(_ notification: Notification) {
+            scheduleHoverUpdate()
+        }
+
+        func scheduleHoverUpdate() {
+            guard !hoverUpdateScheduled else { return }
+            hoverUpdateScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.hoverUpdateScheduled = false
+                self.updateHoverAtCurrentPointer()
+            }
+        }
+
+        private func updateHoverAtCurrentPointer() {
             guard let collection, let window = collection.window else { return }
             let point = window.mouseLocationOutsideOfEventStream
             let collectionPoint = collection.convert(point, from: nil)
@@ -368,15 +428,11 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             guard let collection else { return }
             var next: HomeCollectionItem?
             var pointInItem: NSPoint?
-            if let point, collection.visibleRect.contains(point) {
-                for indexPath in collection.indexPathsForVisibleItems() {
-                    guard let item = collection.item(at: indexPath) as? HomeCollectionItem else { continue }
-                    if item.view.convert(item.view.bounds, to: collection).contains(point) {
-                        next = item
-                        pointInItem = item.view.convert(point, from: collection)
-                        break
-                    }
-                }
+            if let point, collection.visibleRect.contains(point),
+               let indexPath = collection.indexPathForItem(at: point),
+               let item = collection.item(at: indexPath) as? HomeCollectionItem {
+                next = item
+                pointInItem = item.view.convert(point, from: collection)
             }
             if hoveredItem !== next {
                 hoveredItem?.content.setHovered(false, localPoint: nil)
@@ -389,13 +445,10 @@ struct HomeFeedCollectionView: NSViewRepresentable {
     }
 }
 
-private extension Collection {
-    subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil }
-}
-
-private final class HomeNativeCollectionView: NSCollectionView {
+final class HomeNativeCollectionView: NSCollectionView {
     var onActivateSelection: ((IndexPath) -> Void)?
     var onHoverPosition: ((NSPoint?) -> Void)?
+    var onViewportMoved: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
 
     override func didAddSubview(_ subview: NSView) {
@@ -421,8 +474,7 @@ private final class HomeNativeCollectionView: NSCollectionView {
     deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc private func shelfBoundsChanged(_ notification: Notification) {
-        guard let window else { return }
-        onHoverPosition?(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        onViewportMoved?()
     }
 
     override func updateTrackingAreas() {
@@ -452,19 +504,23 @@ private final class HomeNativeCollectionView: NSCollectionView {
     }
 }
 
-private final class HomeCollectionItem: NSCollectionViewItem {
+final class HomeCollectionItem: NSCollectionViewItem {
     static let identifier = NSUserInterfaceItemIdentifier("HomeFeedItem")
     var content: HomeItemView { view as! HomeItemView }
-    override func loadView() { view = HomeItemView(frame: NSRect(x: 0, y: 0, width: 156, height: 208)) }
+    override func loadView() { view = HomeItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 254)) }
     override var isSelected: Bool { didSet { content.isSelectedInFeed = isSelected } }
     override func prepareForReuse() { super.prepareForReuse(); content.prepareForReuse() }
 }
 
-private final class HomeSectionHeaderView: NSView, NSCollectionViewElement {
+final class HomeSectionHeaderView: NSView, NSCollectionViewElement {
     static let identifier = NSUserInterfaceItemIdentifier("HomeFeedHeader")
     private let title = NSTextField(labelWithString: "")
     private let more = NSButton(title: "Ver todo", target: nil, action: nil)
+    private let previous = NSButton(title: "", target: nil, action: nil)
+    private let next = NSButton(title: "", target: nil, action: nil)
     private var action: (() -> Void)?
+    private var previousAction: (() -> Void)?
+    private var nextAction: (() -> Void)?
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
@@ -479,21 +535,50 @@ private final class HomeSectionHeaderView: NSView, NSCollectionViewElement {
         more.action = #selector(openMore)
         more.setAccessibilityLabel("Ver todo")
         addSubview(more)
+        for (button, symbol, selector, label) in [
+            (previous, "chevron.left", #selector(scrollPrevious), "Desplazar estante a la izquierda"),
+            (next, "chevron.right", #selector(scrollNext), "Desplazar estante a la derecha")
+        ] {
+            button.isBordered = false
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
+            button.imagePosition = .imageOnly
+            button.contentTintColor = .secondaryLabelColor
+            button.target = self
+            button.action = selector
+            button.setAccessibilityLabel(label)
+            addSubview(button)
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) no se usa") }
-    override func prepareForReuse() { super.prepareForReuse(); action = nil }
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        action = nil
+        previousAction = nil
+        nextAction = nil
+    }
     override func layout() {
         super.layout()
-        title.frame = NSRect(x: 0, y: 6, width: max(0, bounds.width - 100), height: 28)
-        more.frame = NSRect(x: max(0, bounds.width - 90), y: 8, width: 90, height: 25)
+        let controlsWidth: CGFloat = (previous.isHidden ? 0 : 64) + (more.isHidden ? 0 : 90) + 12
+        title.frame = NSRect(x: 0, y: 6, width: max(0, bounds.width - controlsWidth), height: 28)
+        next.frame = NSRect(x: max(0, bounds.width - (more.isHidden ? 30 : 120)), y: 7, width: 26, height: 26)
+        previous.frame = NSRect(x: max(0, bounds.width - (more.isHidden ? 60 : 150)), y: 7, width: 26, height: 26)
+        more.frame = NSRect(x: max(0, bounds.width - 88), y: 8, width: 84, height: 25)
     }
-    func configure(title: String, showsMore: Bool, action: @escaping () -> Void) {
+    func configure(title: String, showsMore: Bool, showsArrows: Bool,
+                   previous: @escaping () -> Void, next: @escaping () -> Void,
+                   action: @escaping () -> Void) {
         self.title.stringValue = title
         self.more.isHidden = !showsMore
+        self.previous.isHidden = !showsArrows
+        self.next.isHidden = !showsArrows
         self.more.setAccessibilityLabel("Ver todo: \(title)")
         self.action = action
+        previousAction = previous
+        nextAction = next
     }
     @objc private func openMore() { action?() }
+    @objc private func scrollPrevious() { previousAction?() }
+    @objc private func scrollNext() { nextAction?() }
 }
 
 private final class HomeLoadMoreItem: NSCollectionViewItem {
@@ -529,26 +614,32 @@ final class HomeInteractiveLinkButton: NSButton {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         isBordered = false
-        refusesFirstResponder = true
-        focusRingType = .none
+        refusesFirstResponder = false
+        focusRingType = .default
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) no se usa") }
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if !isHidden && bounds.width > 0 && bounds.height > 0 {
+        if isEnabled && !isHidden && bounds.width > 0 && bounds.height > 0 {
             addCursorRect(bounds, cursor: .pointingHand)
         }
     }
 }
 
 final class HomeItemView: NSView {
+    // Dos líneas de título y detalle, más las separaciones. Compartido con el layout del estante.
+    static let largeCardTextHeight: CGFloat = 94
+    private static let largeTitleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
+    private static let largeMetadataFont = NSFont.systemFont(ofSize: 12, weight: .regular)
+    private static let compactArtistMeasureFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
+
     private struct Appearance: Equatable {
         let hovered: Bool
         let selected: Bool
         let playing: Bool
-        let quickPicks: Bool
+        let compactSong: Bool
     }
 
     let cardButton = NSButton()
@@ -556,17 +647,26 @@ final class HomeItemView: NSView {
     private let playSymbol = HomePassthroughImageView()
     private let playImage = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
     private let waveformImage = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
-    private let title = NSButton()
+    private let title = NSTextField(labelWithString: "")
+    private let titleButton = NSButton()
     let artist = HomeInteractiveLinkButton()
+    private let largeArtistLabel = NSTextField(labelWithString: "")
     private let album = HomeInteractiveLinkButton()
     private let subtitle = NSTextField(labelWithString: "")
     private let bullet = NSTextField(labelWithString: "•")
-    private let mixBadge = NSTextField(labelWithString: "MIX")
+    private let typeLabel = NSTextField(labelWithString: "")
+    private let explicitBadge = NSTextField(labelWithString: "E")
     private let more = HomeInteractiveLinkButton()
     private var imageTask: Task<Void, Never>?
     private var generation: UInt64 = 0
     private var representedID: String?
-    private var style: HomeSectionStyle = .cards
+    private var representedRecord: HomeItemRecord?
+    private var style: HomeSectionStyle = .largeCard
+    private var compactArtistTextWidth: CGFloat = 0
+    private var measuredLargeCardWidth: CGFloat = -1
+    private var measuredTitleLines: CGFloat = 1
+    private var measuredTypeWidth: CGFloat = 0
+    private var measuredDetailLines: CGFloat = 1
     private var playing = false
     private var renderedAppearance: Appearance?
     var hovered = false { didSet { if hovered != oldValue { refreshAppearance() } } }
@@ -588,7 +688,7 @@ final class HomeItemView: NSView {
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.borderWidth = AppTheme.cardBorderWidth
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        layer?.borderColor = NSColor.clear.cgColor
 
         // Botón base que cubre todo el marco de la tarjeta
         cardButton.title = ""
@@ -612,41 +712,66 @@ final class HomeItemView: NSView {
         playSymbol.contentTintColor = .white
         addSubview(playSymbol)
 
-        setup(title, selector: #selector(cardPressed), font: .systemFont(ofSize: 13, weight: .semibold))
-        title.alignment = .left
-        title.contentTintColor = .labelColor
-        title.refusesFirstResponder = true
-        title.focusRingType = .none
+        title.font = Self.largeTitleFont
+        title.textColor = .labelColor
+        title.maximumNumberOfLines = 2
+        title.lineBreakMode = .byTruncatingTail
+        title.cell?.wraps = true
+        title.setAccessibilityElement(false)
+        addSubview(title)
+        setup(titleButton, selector: #selector(titlePressed), font: nil)
+        titleButton.title = ""
+        titleButton.isTransparent = true
+        titleButton.refusesFirstResponder = true
+        titleButton.focusRingType = .none
 
-        setup(artist, selector: #selector(artistPressed), font: .systemFont(ofSize: 11.5, weight: .medium))
+        setup(artist, selector: #selector(artistPressed), font: .systemFont(ofSize: 15.5, weight: .regular))
         artist.alignment = .left
         artist.contentTintColor = .secondaryLabelColor
+
+        largeArtistLabel.font = Self.largeMetadataFont
+        largeArtistLabel.textColor = .secondaryLabelColor
+        largeArtistLabel.maximumNumberOfLines = 2
+        largeArtistLabel.lineBreakMode = .byTruncatingTail
+        largeArtistLabel.cell?.wraps = true
+        largeArtistLabel.setAccessibilityElement(false)
+        addSubview(largeArtistLabel, positioned: .below, relativeTo: artist)
 
         setup(album, selector: #selector(albumPressed), font: .systemFont(ofSize: 11.5, weight: .medium))
         album.alignment = .left
         album.contentTintColor = .secondaryLabelColor
 
-        subtitle.font = .systemFont(ofSize: 11)
+        subtitle.font = Self.largeMetadataFont
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingTail
+        subtitle.maximumNumberOfLines = 2
+        subtitle.cell?.wraps = true
         addSubview(subtitle)
 
-        bullet.font = .systemFont(ofSize: 10)
+        bullet.font = Self.largeMetadataFont
         bullet.textColor = .tertiaryLabelColor
         addSubview(bullet)
 
-        mixBadge.font = .systemFont(ofSize: 10, weight: .bold)
-        mixBadge.textColor = .white
-        mixBadge.wantsLayer = true
-        mixBadge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
-        mixBadge.layer?.cornerRadius = 4
-        addSubview(mixBadge)
+        typeLabel.font = Self.largeMetadataFont
+        typeLabel.textColor = .secondaryLabelColor
+        addSubview(typeLabel)
+
+        explicitBadge.font = .systemFont(ofSize: 10, weight: .bold)
+        explicitBadge.textColor = .black
+        explicitBadge.alignment = .center
+        explicitBadge.wantsLayer = true
+        explicitBadge.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.78).cgColor
+        explicitBadge.layer?.cornerRadius = 3
+        explicitBadge.setAccessibilityLabel("Contenido explícito")
+        addSubview(explicitBadge)
 
         setup(more, selector: #selector(morePressed), font: nil)
         more.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Más opciones")
         more.imagePosition = .imageOnly
         more.contentTintColor = .secondaryLabelColor
         more.setAccessibilityLabel("Más opciones")
+        more.refusesFirstResponder = false
+        more.focusRingType = .default
 
         refreshAppearance()
     }
@@ -662,12 +787,19 @@ final class HomeItemView: NSView {
         addSubview(button)
     }
 
+    private static func displayedLines(for text: String, width: CGFloat, font: NSFont) -> CGFloat {
+        guard !text.isEmpty, width > 0 else { return 1 }
+        if text.contains("\n") { return 2 }
+        let textWidth = (text as NSString).size(withAttributes: [.font: font]).width
+        return textWidth > width - 2 ? 2 : 1
+    }
+
     override func layout() {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         cardButton.frame = bounds
-        if style == .quickPicks {
+        if style == .compactSong {
             layer?.cornerRadius = 14
             cover.frame = NSRect(x: 6, y: 6, width: 44, height: 44)
             playSymbol.frame = NSRect(x: 19, y: 19, width: 18, height: 18)
@@ -675,34 +807,63 @@ final class HomeItemView: NSView {
             let textLeading: CGFloat = 58
             let moreTrailingMargin: CGFloat = 38
             let maxTextWidth = max(0, bounds.width - textLeading - moreTrailingMargin)
-            title.frame = NSRect(x: textLeading, y: 8, width: maxTextWidth, height: 19)
+            title.frame = NSRect(x: textLeading, y: 5, width: maxTextWidth, height: 23)
+            titleButton.frame = title.frame
 
-            let measureFont = NSFont.systemFont(ofSize: 11.5, weight: .semibold)
-            let artistText = rawArtistTitle.isEmpty ? artist.title : rawArtistTitle
-            let artistTextWidth = ceil((artistText as NSString).size(withAttributes: [.font: measureFont]).width) + 2
-
-            let artistWidth = min(artistTextWidth, maxTextWidth)
-            artist.frame = NSRect(x: textLeading, y: 29, width: artistWidth, height: 17)
-            album.isHidden = true
-            bullet.isHidden = true
+            let badgeWidth: CGFloat = explicitBadge.isHidden ? 0 : 18
+            explicitBadge.frame = NSRect(x: textLeading, y: 31, width: 14, height: 14)
+            let metadataLeading = textLeading + badgeWidth
+            let artistWidth = artist.isHidden ? 0 : min(compactArtistTextWidth, max(0, maxTextWidth - badgeWidth))
+            artist.frame = NSRect(x: metadataLeading, y: 30, width: artistWidth, height: 17)
+            let separatorX = metadataLeading + artistWidth + 3
+            bullet.frame = NSRect(x: separatorX, y: 30, width: 10, height: 17)
+            bullet.isHidden = artist.isHidden || album.isHidden
+            let albumX = separatorX + (bullet.isHidden ? 0 : 10)
+            album.frame = NSRect(x: albumX, y: 30, width: max(0, bounds.width - albumX - moreTrailingMargin), height: 17)
 
             more.frame = NSRect(x: bounds.width - 34, y: 14, width: 28, height: 28)
             more.layer?.backgroundColor = NSColor.clear.cgColor
+            typeLabel.isHidden = true
+            subtitle.isHidden = true
+            largeArtistLabel.isHidden = true
         } else {
             layer?.cornerRadius = 14
             let art = bounds.width
-            cover.frame = NSRect(x: 0, y: 0, width: art, height: art)
-            playSymbol.frame = NSRect(x: art - 36, y: art - 36, width: 28, height: 28)
-            title.frame = NSRect(x: 0, y: art + 7, width: art, height: 20)
-            subtitle.frame = NSRect(x: 1, y: art + 30, width: art - 2, height: 17)
-            mixBadge.frame = NSRect(x: 8, y: 8, width: 34, height: 16)
-            more.frame = NSRect(x: art - 34, y: 6, width: 28, height: 28)
+            let artX: CGFloat = 0
+            cover.frame = NSRect(x: artX, y: 0, width: art, height: art)
+            playSymbol.frame = NSRect(x: artX + art - 36, y: art - 36, width: 28, height: 28)
+            let badgeWidth: CGFloat = explicitBadge.isHidden ? 0 : 20
+            if measuredLargeCardWidth != bounds.width {
+                measuredLargeCardWidth = bounds.width
+                measuredTitleLines = Self.displayedLines(for: title.stringValue, width: bounds.width, font: Self.largeTitleFont)
+                measuredTypeWidth = ceil((typeLabel.stringValue as NSString).size(withAttributes: [.font: Self.largeMetadataFont]).width)
+                let actualDetailWidth = max(0, bounds.width - badgeWidth - measuredTypeWidth - 15)
+                let detailText = artist.isHidden ? subtitle.stringValue : rawArtistTitle
+                measuredDetailLines = Self.displayedLines(for: detailText, width: actualDetailWidth, font: Self.largeMetadataFont)
+            }
+            let titleHeight = measuredTitleLines * 18
+            title.frame = NSRect(x: 0, y: art + 11, width: bounds.width, height: titleHeight)
+            titleButton.frame = title.frame
+            let metadataY = title.frame.maxY + 3
+            explicitBadge.frame = NSRect(x: 0, y: metadataY + 1, width: 15, height: 15)
+            let metadataLeading = badgeWidth
+            typeLabel.frame = NSRect(x: metadataLeading, y: metadataY, width: measuredTypeWidth, height: 17)
+            let showMetadataDetail = !artist.isHidden || !subtitle.isHidden
+            let separatorX = metadataLeading + measuredTypeWidth + 5
+            bullet.frame = NSRect(x: separatorX, y: metadataY, width: 8, height: 17)
+            bullet.isHidden = !showMetadataDetail
+            let detailX = separatorX + (showMetadataDetail ? 10 : 0)
+            let detailFrame = NSRect(x: detailX, y: metadataY, width: max(0, bounds.width - detailX), height: measuredDetailLines * 16)
+            artist.frame = detailFrame
+            largeArtistLabel.frame = detailFrame
+            largeArtistLabel.isHidden = artist.isHidden
+            subtitle.frame = detailFrame
+            more.frame = NSRect(x: artX + art - 34, y: 6, width: 28, height: 28)
             more.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor
             more.layer?.cornerRadius = 14
         }
-        cover.layer?.cornerRadius = style == .quickPicks ? 8 : (representedKind == "artist" ? bounds.width / 2 : 12)
+        cover.layer?.cornerRadius = style == .compactSong ? 8 : (representedKind == "artist" ? bounds.width / 2 : 12)
         CATransaction.commit()
-        window?.invalidateCursorRects(for: self)
     }
 
     static func parseSubtitleComponents(_ rawSubtitle: String?) -> [String] {
@@ -721,6 +882,9 @@ final class HomeItemView: NSView {
     static func cleanArtistName(from record: HomeItemRecord) -> String {
         if let artists = record.artists, !artists.isEmpty {
             return artists
+        }
+        if let linkedArtist = record.artistRuns.first(where: { $0.id != nil })?.text, !linkedArtist.isEmpty {
+            return linkedArtist
         }
         let comps = parseSubtitleComponents(record.subtitle)
         if let first = comps.first {
@@ -772,9 +936,11 @@ final class HomeItemView: NSView {
         onArtist: @escaping () -> Void, onAlbum: @escaping () -> Void,
         menuProvider: @escaping () -> NSMenu?
     ) {
-        if representedID != nil { prepareForReuse() }
+        let samePresentation = representedRecord == record && self.style == style
+        if representedID != nil && !samePresentation { prepareForReuse() }
         self.style = style
         representedID = record.id
+        representedRecord = record
         representedKind = record.kind
         self.onCard = onCard
         self.onCover = onCover
@@ -782,43 +948,64 @@ final class HomeItemView: NSView {
         self.onArtist = onArtist
         self.onAlbum = onAlbum
         self.menuProvider = menuProvider
+        if samePresentation {
+            updatePlayback(currentTrackID: currentTrackID, isPlaying: isPlaying)
+            return
+        }
 
         cardButton.title = ""
         cardButton.isTransparent = true
         cardButton.toolTip = record.title
-        title.title = record.title
+        title.stringValue = record.title
+        title.font = style == .compactSong ? .systemFont(ofSize: 13, weight: .semibold) : Self.largeTitleFont
+        title.maximumNumberOfLines = style == .compactSong ? 1 : 2
         title.toolTip = record.title
-        title.setAccessibilityLabel("Abrir \(record.title)")
-        subtitle.stringValue = record.subtitle ?? ""
+        titleButton.toolTip = record.title
+        let typeName = Self.displayType(for: record)
+        typeLabel.stringValue = typeName
+        titleButton.setAccessibilityLabel("\(typeName): \(record.title)")
 
         let artistName = Self.cleanArtistName(from: record)
         rawArtistTitle = artistName
+        compactArtistTextWidth = ceil((artistName as NSString).size(withAttributes: [.font: Self.compactArtistMeasureFont]).width) + 2
+        measuredLargeCardWidth = -1
         artist.title = artistName
-        artist.setAccessibilityLabel("Ver artista: \(artistName)")
+        largeArtistLabel.stringValue = artistName
+        largeArtistLabel.toolTip = artistName
+        artist.toolTip = artistName
+        let hasArtistDestination = (record.artistId ?? record.artistRuns.first(where: { $0.id?.isEmpty == false })?.id)?.isEmpty == false
+        artist.isEnabled = hasArtistDestination
+        artist.setAccessibilityLabel(hasArtistDestination ? "Ver artista: \(artistName)" : "Artista: \(artistName)")
+        rawAlbumTitle = Self.cleanAlbumName(from: record) ?? ""
+        album.title = rawAlbumTitle
+        let hasAlbumDestination = record.albumId?.isEmpty == false
+        album.isEnabled = hasAlbumDestination
+        album.setAccessibilityLabel(hasAlbumDestination ? "Ver álbum: \(rawAlbumTitle)" : "Álbum: \(rawAlbumTitle)")
 
-        album.isHidden = true
+        let creatorHasLink = record.kind == "playlist" && record.artistRuns.contains { $0.id?.isEmpty == false }
+        let artistCanShow = !artistName.isEmpty && record.kind != "artist" && (record.kind != "playlist" || creatorHasLink)
+        artist.isHidden = !artistCanShow
+        largeArtistLabel.isHidden = style == .compactSong || !artistCanShow
+        album.isHidden = rawAlbumTitle.isEmpty || record.kind != "song"
         bullet.isHidden = true
-        artist.isHidden = style != .quickPicks
-        subtitle.isHidden = style == .quickPicks
+        typeLabel.isHidden = style == .compactSong
+        subtitle.stringValue = record.kind == "playlist" && !creatorHasLink ? (record.subtitle ?? "") : ""
+        subtitle.isHidden = style == .compactSong || subtitle.stringValue.isEmpty
+        explicitBadge.isHidden = !record.explicit
 
         refreshArtistAppearance()
-
-        let isMix = (record.kind == "mix" ||
-                     (record.kind == "playlist" && (record.title.lowercased().contains("mix") || record.subtitle?.lowercased().contains("mix") == true))) &&
-                    record.kind != "album" && record.kind != "artist"
-        mixBadge.isHidden = !isMix
         updatePlayback(currentTrackID: currentTrackID, isPlaying: isPlaying)
         refreshAppearance()
         needsLayout = true
 
         guard let url = ImageURLHelper.optimizedThumbnailURL(
-            from: record.thumbnail, targetPixelSize: style == .quickPicks ? 112 : 320
+            from: record.thumbnail, targetPixelSize: style == .compactSong ? 112 : 320
         ) else {
             cover.image = NSImage(systemSymbolName: record.kind == "artist" ? "person.crop.circle" : "music.note", accessibilityDescription: nil)
             cover.contentTintColor = .secondaryLabelColor
             return
         }
-        let target = style == .quickPicks ? CGSize(width: 48, height: 48) : CGSize(width: 156, height: 156)
+        let target = style == .compactSong ? CGSize(width: 48, height: 48) : CGSize(width: 156, height: 156)
         if let cached = ImageCache.shared.imageFromMemoryCache(for: url, targetSize: target) {
             cover.image = cached
             return
@@ -834,11 +1021,35 @@ final class HomeItemView: NSView {
         }
     }
 
+    private static func displayType(for record: HomeItemRecord) -> String {
+        if record.kind == "album", let prefix = Self.parseSubtitleComponents(record.subtitle).first?.lowercased() {
+            switch prefix {
+            case "single", "sencillo": return "Sencillo"
+            case "ep": return "EP"
+            case "album", "álbum": return "Álbum"
+            default: break
+            }
+        }
+        return switch record.kind {
+        case "song": "Canción"
+        case "album": "Álbum"
+        case "artist": "Artista"
+        default: "Playlist"
+        }
+    }
+
     private func refreshArtistAppearance() {
         guard !artist.isHidden else { return }
         let text = rawArtistTitle.isEmpty ? artist.title : rawArtistTitle
         guard !text.isEmpty else { return }
         let isHovered = isArtistHovered
+        if style == .largeCard {
+            artist.title = ""
+            artist.isTransparent = true
+            largeArtistLabel.textColor = isHovered ? .labelColor : .secondaryLabelColor
+            return
+        }
+        artist.isTransparent = false
         let font = NSFont.systemFont(ofSize: 11.5, weight: isHovered ? .semibold : .medium)
         let color: NSColor = isHovered ? .labelColor : .secondaryLabelColor
         let paragraph = NSMutableParagraphStyle()
@@ -874,7 +1085,13 @@ final class HomeItemView: NSView {
 
     func updatePlayback(currentTrackID: String?, isPlaying: Bool) {
         playing = representedKind == "song" && representedID == currentTrackID && isPlaying
-        let actionLabel = playing ? "Pausar \(title.title)" : "Abrir \(title.title)"
+        let metadata = [typeLabel.stringValue, explicitBadge.isHidden ? nil : "Explícita",
+                        rawArtistTitle.isEmpty ? nil : rawArtistTitle,
+                        rawAlbumTitle.isEmpty ? nil : rawAlbumTitle]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+        let action = playing ? "Pausar" : (representedKind == "song" ? "Reproducir" : "Abrir")
+        let actionLabel = "\(action) \(title.stringValue). \(metadata)"
         cover.setAccessibilityLabel(actionLabel)
         cardButton.setAccessibilityLabel(actionLabel)
         cardButton.title = ""
@@ -888,7 +1105,10 @@ final class HomeItemView: NSView {
         imageTask = nil
         generation &+= 1
         representedID = nil
+        representedRecord = nil
         representedKind = ""
+        compactArtistTextWidth = 0
+        measuredLargeCardWidth = -1
         cardButton.title = ""
         cardButton.isTransparent = true
         cover.image = nil
@@ -898,6 +1118,9 @@ final class HomeItemView: NSView {
         isAlbumHovered = false
         rawArtistTitle = ""
         rawAlbumTitle = ""
+        artist.isEnabled = true
+        album.isEnabled = true
+        explicitBadge.isHidden = true
         renderedAppearance = nil
         onCard = nil
         onCover = nil
@@ -912,7 +1135,8 @@ final class HomeItemView: NSView {
         if !value {
             if isArtistHovered {
                 isArtistHovered = false
-                refreshArtistAppearance()
+        refreshArtistAppearance()
+        refreshAlbumAppearance()
             }
             if isAlbumHovered {
                 isAlbumHovered = false
@@ -924,14 +1148,14 @@ final class HomeItemView: NSView {
     }
 
     func updateHoverLocation(_ point: NSPoint) {
-        if !artist.isHidden {
+        if artist.isEnabled && !artist.isHidden {
             let overArtist = artist.frame.contains(point)
             if isArtistHovered != overArtist {
                 isArtistHovered = overArtist
                 refreshArtistAppearance()
             }
         }
-        if !album.isHidden {
+        if album.isEnabled && !album.isHidden {
             let overAlbum = album.frame.contains(point)
             if isAlbumHovered != overAlbum {
                 isAlbumHovered = overAlbum
@@ -962,14 +1186,14 @@ final class HomeItemView: NSView {
 
     private func refreshAppearance() {
         let next = Appearance(hovered: hovered, selected: isSelectedInFeed,
-                              playing: playing, quickPicks: style == .quickPicks)
+                              playing: playing, compactSong: style == .compactSong)
         guard renderedAppearance != next else { return }
         let previous = renderedAppearance
         renderedAppearance = next
         let isHighlighted = hovered || isSelectedInFeed
-        if style == .quickPicks {
+        if style == .compactSong {
             layer?.backgroundColor = (isHighlighted ? NSColor.white.withAlphaComponent(0.08) : NSColor.clear).cgColor
-            layer?.borderColor = (isHighlighted ? NSColor.white.withAlphaComponent(0.12) : NSColor.white.withAlphaComponent(0.06)).cgColor
+            layer?.borderColor = NSColor.clear.cgColor
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
             layer?.borderColor = NSColor.clear.cgColor
@@ -977,7 +1201,7 @@ final class HomeItemView: NSView {
         playSymbol.isHidden = !(hovered || playing)
         if previous?.playing != playing { playSymbol.image = playing ? waveformImage : playImage }
         more.contentTintColor = hovered ? .labelColor : .secondaryLabelColor
-        more.isHidden = (style != .quickPicks && !hovered)
+        more.isHidden = (style != .compactSong && !hovered && !isSelectedInFeed)
     }
 
     @objc private func cardPressed() { (onCard ?? onCover ?? onTitle)?() }

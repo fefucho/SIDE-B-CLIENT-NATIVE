@@ -68,11 +68,17 @@ pub struct BrowseItem {
     pub album_id: Option<String>,
 }
 
+/// Renderer family YouTube used for a home shelf.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SectionFormat { LargeCards, CompactSongs, Mixed }
+
 /// A titled row of cards on the home feed.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     pub title: String,
+    pub format: SectionFormat,
     pub items: Vec<BrowseItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub more_browse_id: Option<String>,
@@ -330,9 +336,15 @@ pub fn parse_home(root: &Value) -> HomePage {
     for shelf in find_all(root, "musicCarouselShelfRenderer") {
         let header = find_all(shelf, "musicCarouselShelfBasicHeaderRenderer").into_iter().next();
         let title = header.and_then(|h| runs_text(h.get("title"))).unwrap_or_default();
-        let items: Vec<BrowseItem> = shelf
-            .get("contents")
-            .and_then(Value::as_array)
+        let contents = shelf.get("contents").and_then(Value::as_array);
+        let has_cards = contents.is_some_and(|items| items.iter().any(|v| v.get("musicTwoRowItemRenderer").is_some()));
+        let has_song_rows = contents.is_some_and(|items| items.iter().any(|v| v.get("musicResponsiveListItemRenderer").is_some()));
+        let format = match (has_cards, has_song_rows) {
+            (true, true) => SectionFormat::Mixed,
+            (false, true) => SectionFormat::CompactSongs,
+            _ => SectionFormat::LargeCards,
+        };
+        let items: Vec<BrowseItem> = contents
             .map(|c| c.iter().filter_map(parse_carousel_item).collect())
             .unwrap_or_default();
         if !items.is_empty() {
@@ -343,7 +355,7 @@ pub fn parse_home(root: &Value) -> HomePage {
                 more.and_then(|e| e.get("browseId")).and_then(Value::as_str).map(str::to_owned);
             let more_params =
                 more.and_then(|e| e.get("params")).and_then(Value::as_str).map(str::to_owned);
-            sections.push(Section { title, items, more_browse_id, more_params });
+            sections.push(Section { title, format, items, more_browse_id, more_params });
         }
     }
     HomePage { chips, sections, continuation: continuation_token(root) }
@@ -966,6 +978,17 @@ fn parse_carousel_item(node: &Value) -> Option<BrowseItem> {
     None
 }
 
+fn first_album_id(runs: &[Value]) -> Option<String> {
+    runs.iter().find_map(|run| {
+        let id = run
+            .get("navigationEndpoint")?
+            .get("browseEndpoint")?
+            .get("browseId")?
+            .as_str()?;
+        id.starts_with("MPRE").then(|| id.to_owned())
+    })
+}
+
 /// A `musicTwoRowItemRenderer` → one card. Kind inferred from its navigation endpoint.
 fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
     let title = runs_text(node.get("title"))?;
@@ -1000,7 +1023,7 @@ fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
             artists: subtitle,
             artist_id: runs.and_then(|r| first_artist_id(r)),
             album: None,
-            album_id: None,
+            album_id: runs.and_then(|r| first_album_id(r)),
         });
     }
     // Playlist via watchPlaylistEndpoint (some carousels expose the raw playlistId).
@@ -1224,6 +1247,27 @@ mod tests {
                                 { "text": " • " }, { "text": "2024" }
                             ] },
                             "navigationEndpoint": { "browseEndpoint": { "browseId": "MPREb_abc" } }
+                        } },
+                        { "musicTwoRowItemRenderer": {
+                            "title": { "runs": [{ "text": "Song Card" }] },
+                            "subtitle": { "runs": [
+                                { "text": "Artist", "navigationEndpoint": { "browseEndpoint": { "browseId": "UCcardartist" } } },
+                                { "text": " • " }, { "text": "Album" }
+                            ] },
+                            "subtitleBadges": [{ "musicInlineBadgeRenderer": { "icon": { "iconType": "MUSIC_EXPLICIT_BADGE" } } }],
+                            "navigationEndpoint": { "watchEndpoint": { "videoId": "card-song" } }
+                        } },
+                        { "musicResponsiveListItemRenderer": {
+                            "playlistItemData": { "videoId": "mixed-row" },
+                            "flexColumns": [
+                                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Row Song" }] } } },
+                                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+                                    { "text": "Row Artist", "navigationEndpoint": { "browseEndpoint": { "browseId": "UCrowartist" } } },
+                                    { "text": " • " },
+                                    { "text": "Row Album", "navigationEndpoint": { "browseEndpoint": { "browseId": "MPRErowalbum" } } },
+                                    { "text": " • " }, { "text": "3:12" }
+                                ] } } }
+                            ]
                         } }
                     ]
                 } },
@@ -1266,7 +1310,8 @@ mod tests {
         assert_eq!(home.sections.len(), 3);
         let s = &home.sections[0];
         assert_eq!(s.title, "Mixed for you");
-        assert_eq!(s.items.len(), 2);
+        assert_eq!(s.format, SectionFormat::Mixed);
+        assert_eq!(s.items.len(), 4);
         assert_eq!(s.items[0].kind, "playlist");
         assert_eq!(s.items[0].id, "VLPL123");
         assert_eq!(s.items[0].title, "My Mix");
@@ -1283,16 +1328,29 @@ mod tests {
                 .collect::<Vec<_>>(),
             [("Artist", Some("UCartist"))]
         );
+        let card_song = &s.items[2];
+        assert_eq!(card_song.kind, "song");
+        assert_eq!(card_song.id, "card-song");
+        assert_eq!(card_song.artist_id.as_deref(), Some("UCcardartist"));
+        assert!(card_song.explicit);
+        assert_eq!(card_song.album_id, None);
+        let row_song = &s.items[3];
+        assert_eq!(row_song.kind, "song");
+        assert_eq!(row_song.id, "mixed-row");
+        assert_eq!(row_song.artist_id.as_deref(), Some("UCrowartist"));
+        assert_eq!(row_song.album_id.as_deref(), Some("MPRErowalbum"));
         // The card an unlinked subtitle describes still carries none.
         assert!(home.sections[1].items[0].artist_runs.is_empty());
         assert_eq!(s.more_browse_id.as_deref(), Some("FEmusic_moods_and_genres_category"));
         assert_eq!(s.more_params.as_deref(), Some("MOREPARAMS"));
         let s2 = &home.sections[1];
+        assert_eq!(s2.format, SectionFormat::LargeCards);
         assert_eq!(s2.title, "Recommended albums");
         assert_eq!(s2.more_browse_id, None);
         assert_eq!(s2.more_params, None);
         // A song row keeps artist and duration apart: the row shows both, the queue gets the artist.
         let song = &home.sections[2].items[0];
+        assert_eq!(home.sections[2].format, SectionFormat::CompactSongs);
         assert_eq!(song.kind, "song");
         assert_eq!(song.id, "vid123");
         assert_eq!(song.subtitle.as_deref(), Some("The Artist"));
@@ -1330,11 +1388,14 @@ mod tests {
         let root = card(
             json!([
                 { "text": "Miley Cyrus", "navigationEndpoint": { "browseEndpoint": { "browseId": "UCmiley" } } },
-                { "text": " • " }, { "text": "Plastic Hearts" }, { "text": " • " }, { "text": "2020" }
+                { "text": " • " }, { "text": "Plastic Hearts", "navigationEndpoint": { "browseEndpoint": { "browseId": "MPREplastic" } } }, { "text": " • " }, { "text": "2020" }
             ]),
             song_nav,
         );
-        assert_eq!(items(&root)[0].subtitle.as_deref(), Some("Miley Cyrus"));
+        let song = &items(&root)[0];
+        assert_eq!(song.subtitle.as_deref(), Some("Miley Cyrus"));
+        assert_eq!(song.album_id.as_deref(), Some("MPREplastic"));
+        assert_eq!(song.artist_runs.iter().map(|run| (run.text.as_str(), run.id.as_deref())).collect::<Vec<_>>(), [("Miley Cyrus", Some("UCmiley"))]);
 
         // An album card is not a queue entry, so its subtitle stays whole.
         let root = card(

@@ -2273,6 +2273,106 @@
 - **Verificación**:
   - `swift test`: 44/44 tests aprobados en 3 suites (100%).
   - `swift build -c release`: Compilación limpia en 1.75s.
-  - Repositorio Git inicializado en rama `main` vinculado a `https://github.com/fefucho/SIDE-B-CLIENT-NATIVE.git`.
+- Repositorio Git inicializado en rama `main` vinculado a `https://github.com/fefucho/SIDE-B-CLIENT-NATIVE.git`.
 
+---
 
+### [FIX-061] - PLAN-009: Dos formatos de Inicio y carga de secciones prioritarias
+
+- **Fecha**: 2026-09-26 13:26 (GMT-3)
+- **Agente / Rol**: Core (Rust/UniFFI) y UI (Swift/AppKit)
+- **Componente**: `Home Feed` | `Rust` | `UniFFI` | `SwiftUI/AppKit` | `Build`
+- **Problema / Causa Raíz**:
+  - El parser conocía si YouTube enviaba tarjetas o filas de canciones, pero el contrato Home descartaba ese origen y también descartaba datos de enlace de artista y el indicador explícito.
+  - El clasificador de Inicio infería Quick picks por el texto del título o por una proporción de canciones, enviando secciones mixtas como Forgotten favorites a filas compactas.
+  - Inicio no buscaba secciones prioritarias en continuaciones y sus celdas podían generar enlaces de artista/álbum a partir de texto sin ID fiable.
+- **Solución Aplicada**:
+  - Añadido `SectionFormat` tipado (`largeCards`, `compactSongs`, `mixed`) desde los renderers recibidos y `HomeSectionFormatRecord` al contrato UniFFI.
+  - Home conserva enlaces estructurados de artista, explicit y `album_id` únicamente cuando existe un `MPRE…` real. La caché subió a versión 2 y descarta formatos anteriores.
+  - `HomePresentationFactory` usa dos estilos visuales, excepciones localizadas, orden prioritario en «Todos» e identidad por destino/contenido que sobrevive a títulos traducidos.
+  - Inicio usa tarjetas cuadradas con tipo, títulos de hasta dos líneas y enlaces verificados; filas compactas muestran artista y álbum independientes, cuatro filas por columna, estado hover/foco y menú real. Mix/radio se sigue presentando como playlist mientras Core no entregue subtipo fiable.
+  - La primera página se presenta sin esperar. Una tarea cancelable busca secciones prioritarias hasta 3 continuaciones o 12 segundos acumulados, deduplica, mantiene el token válido y se invalida al cambiar cuenta, chip o refresh.
+  - Ajustado `build_xcframework.sh`: sus cambios de concurrencia en el binding generado ahora son idempotentes y no duplican anotaciones al regenerar.
+- **Archivos Modificados**:
+  - `core/crates/innertube/src/models/browse.rs`
+  - `core/crates/innertube/src/lib.rs`
+  - `core/crates/innertube/src/blocklist.rs` (completa el constructor de un fixture requerido por la compilación de pruebas)
+  - `core/crates/sideb-core/src/lib.rs`
+  - `apple/SideBCore/Sources/SideBCore/sideb_core.swift` (regenerado)
+  - `apple/build_xcframework.sh`
+  - `apple/Sources/SideB/Services/HomeFeedCacheStore.swift`
+  - `apple/Sources/SideB/Models/HomeFeedPresentation.swift`
+  - `apple/Sources/SideB/Views/Home/HomeFeedCollectionView.swift`
+  - `apple/Sources/SideB/Views/Home/HomeBenchmarkFixture.swift`
+  - `apple/Sources/SideB/ViewModels/HomeViewModel.swift`
+  - `apple/Tests/SideBTests/HomeViewModelTests.swift`
+  - `documentation/plans/PLAN-009-inicio-dos-formatos.md`
+  - `documentation/plans/README.md`
+  - `documentation/PROJECT_STATE.md`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**:
+  - `cargo test -p innertube models::browse::tests --no-fail-fast`: 27 pruebas aprobadas durante la integración; el fixture mixto actualizado y la extracción de `album_id` también pasan en sus pruebas dirigidas.
+  - `cargo check -p sideb-core`: correcto, con advertencias de dead code ya presentes en el Core.
+  - Pruebas Swift dirigidas de Home: 5/5 aprobadas (orden/identidad, celda, continuación encontrada, fallo de red, token repetido y cambio de chip).
+  - `sh apple/build_xcframework.sh`: XCFramework y binding regenerados correctamente.
+  - `swift build`: correcto con contrato UniFFI actualizado.
+  - `sh Scripts/compile_and_run.sh`: compilación Release correcta (SDK 27.0), bundle `apple/.build/app/SideB.app` creado y proceso Side B abierto para validación manual.
+
+---
+
+### [FIX-062] - PLAN-009: Pulido visual de tarjetas grandes de Inicio
+
+- **Fecha**: 2026-09-26 13:38 (GMT-3)
+- **Agente / Rol**: UI (Swift/AppKit)
+- **Componente**: `Home Feed` | `Tarjetas de álbum/canción` | `Accesibilidad`
+- **Problema / Causa Raíz**:
+  - La tipografía de las tarjetas quedaba demasiado pequeña frente a la portada, los márgenes laterales hacían que el texto no compartiera el mismo eje que la imagen y la marca explícita flotaba sobre el arte.
+- **Solución Aplicada**:
+  - Aumentado el ancho de tarjeta y alineada la portada cuadrada al borde del título.
+  - Ajustados tamaño, peso y separación del título; el tipo, el artista y el creador ahora comparten una línea secundaria en gris.
+  - La marca explícita usa una insignia clara y compacta dentro de esa línea, también en filas compactas.
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Views/Home/HomeFeedCollectionView.swift`
+- **Verificación**:
+  - `sh Scripts/compile_and_run.sh`: compilación Release correcta con SDK 27.0; bundle creado y Side B abierto.
+  - Verificación visual en Inicio: título, metadatos e insignia explícita visibles y alineados con las portadas.
+  - El compilador dejó advertencias existentes de UniFFI, `WindowConfigurator.swift` y `SideBApp.swift`, además de una advertencia por una variable no usada en `HomeFeedCollectionView.swift`; no hubo errores de compilación.
+
+---
+
+### [FIX-063] - Persistencia de volumen, cola y última canción
+
+- **Fecha**: 2026-09-26 14:57 (GMT-3)
+- **Agente / Rol**: UI (Swift/macOS)
+- **Componente**: `AudioPlayer` | `QueueManager` | `App Lifecycle`
+- **Problema / Causa Raíz**: El volumen partía siempre de 100 % y la cola y canción activa vivían solo en memoria. Una canción restaurada sin `AVPlayerItem` tampoco podía arrancar con el Play anterior.
+- **Solución Aplicada**:
+  - Volumen y volumen anterior al silencio guardados en preferencias locales.
+  - Cola versionada por identidad de cuenta/invitado en Application Support, con escritura atómica y agrupación de cambios. Una asociación local del hash de sesión permite restaurar la identidad conocida si falla la red. Se guardan metadata, orden, índice, contexto, radio seed y modos; se omiten cookies, URLs temporales y tokens de continuación.
+  - Restauración de la última canción en pausa desde 0:00. El primer Play resuelve el stream; menú y teclas multimedia usan el mismo camino.
+  - Arranque, inicio/cierre de sesión y terminación sincronizan el estado correspondiente.
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Services/Player/AudioPlayerService.swift`
+  - `apple/Sources/SideB/Services/Player/QueueManager.swift`
+  - `apple/Sources/SideB/Services/Player/PlaybackStateStore.swift`
+  - `apple/Sources/SideB/ViewModels/PlayerViewModel.swift`
+  - `apple/Sources/SideB/SideBApp.swift`
+  - `apple/Tests/SideBTests/PlaybackStateStoreTests.swift`
+  - `documentation/PROJECT_STATE.md`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**: `swift build --package-path apple` correcto; cuatro pruebas dirigidas de persistencia, volumen, archivos dañados y restauración pausada pasan. Falta validación manual con una cuenta real y reproducción de red.
+
+---
+
+### [FIX-064] - Seguimiento visual y scroll manual de letras sincronizadas
+
+- **Fecha**: 2026-09-26 15:18 (GMT-3)
+- **Agente / Rol**: UI (Swift/macOS)
+- **Componente**: `FullscreenNowPlayingView` | `Letras sincronizadas`
+- **Problema / Causa Raíz**: Las letras pasaban de una línea a otra con un cambio visual brusco y el scroll automático seguía moviendo el panel cuando la persona intentaba explorar otras líneas.
+- **Solución Aplicada**:
+  - La línea activa se obtiene del último inicio anterior al tiempo actual y se conserva durante huecos. El scroll la centra solo dentro de los límites naturales del contenido, sin añadir medio panel vacío al comienzo o al final.
+  - La tipografía creció un 20 % (21 a 25,2 pt); el resaltado usa una transición sutil de opacidad, peso, escala y brillo, con soporte para movimiento reducido.
+  - El scroll iniciado por la persona pausa el seguimiento. Una cápsula Liquid Glass inferior vuelve a centrar la letra actual y reactiva el seguimiento; las letras sin sincronización permanecen como texto desplazable.
+- **Archivos Modificados**: `apple/Sources/SideB/Views/Fullscreen/FullscreenNowPlayingView.swift`, `apple/Tests/SideBTests/LyricTimingTests.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `swift build --package-path apple` correcto; `swift test --package-path apple` aprobó 55 pruebas, incluidas tres nuevas de tiempos de letras. Queda pendiente la revisión visual interactiva con letras reales en macOS 15 y 26/27.

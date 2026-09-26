@@ -26,6 +26,7 @@ final class HomeViewModel {
     @ObservationIgnored private let signposter = OSSignposter(subsystem: "com.fefucho.SideB", category: .pointsOfInterest)
     @ObservationIgnored private let cacheStore: HomeFeedCacheStore
     @ObservationIgnored private var cacheTransition: Task<Void, Never>?
+    @ObservationIgnored private var priorityPrefetchTask: Task<Void, Never>?
     @ObservationIgnored private var sessionKey = "guest"
     @ObservationIgnored private var sessionToken = UUID().uuidString
     @ObservationIgnored private var didHydrate = false
@@ -41,6 +42,8 @@ final class HomeViewModel {
 
     /// Se llama después de instalar la cookie en Core y antes de mostrar Inicio.
     func prepareSession(identity: String, purgePrevious: Bool = true) {
+        priorityPrefetchTask?.cancel()
+        priorityPrefetchTask = nil
         let oldKey = sessionKey
         let oldToken = sessionToken
         let previousTransition = cacheTransition
@@ -74,6 +77,9 @@ final class HomeViewModel {
     func resetForAccountChange() { prepareSession(identity: "guest") }
 
     func loadHomeFeed(core: SideBCore, chipParams: String? = nil) async {
+        priorityPrefetchTask?.cancel()
+        priorityPrefetchTask = nil
+        isLoadingMore = false
         requestGeneration &+= 1
         let generation = requestGeneration
         let key = chipParams ?? ""
@@ -126,6 +132,9 @@ final class HomeViewModel {
                 await cacheTransition?.value
                 guard generation == requestGeneration else { return }
                 await cacheStore.save(HomeCachedPage(page), for: sessionKey, token: sessionToken)
+                if let token = page.continuation {
+                    startPriorityPrefetch(core: core, token: token, generation: generation, chip: chipParams)
+                }
             }
         } catch {
             guard generation == requestGeneration else { return }
@@ -151,10 +160,10 @@ final class HomeViewModel {
         do {
             let page = try await fetchContinuation(core: core, token: token)
             guard generation == requestGeneration, continuationToken == token, !Task.isCancelled else { return }
-            let existing = Set(sectionRecords.map(Self.sectionSignature))
-            let fresh = page.sections.filter { !existing.contains(Self.sectionSignature($0)) }
+            var existing = Set(sectionRecords.map(Self.sectionSignature))
+            let fresh = page.sections.filter { existing.insert(Self.sectionSignature($0)).inserted }
             sectionRecords.append(contentsOf: fresh)
-            let next = page.sections.isEmpty ? nil : page.continuation
+            let next = page.continuation.flatMap { $0.isEmpty || $0 == token ? nil : $0 }
             apply(records: sectionRecords, continuation: next, chip: selectedChipParams)
             remember(FeedSnapshot(records: sectionRecords, continuation: next), for: key)
             isLoadingMore = false
@@ -209,7 +218,84 @@ final class HomeViewModel {
     }
 
     private static func sectionSignature(_ section: HomeSectionRecord) -> String {
-        "\(section.title)|\(section.items.count)|\(section.items.first?.id ?? "")|\(section.items.last?.id ?? "")"
+        let first = section.items.first.map { "\($0.kind):\($0.id)" } ?? ""
+        let last = section.items.last.map { "\($0.kind):\($0.id)" } ?? ""
+        if let browseID = section.moreBrowseId, !browseID.isEmpty {
+            return "more|\(browseID)|\(section.moreParams ?? "")|\(first)|\(last)"
+        }
+        return "items|\(first)|\(last)"
+    }
+
+    private func startPriorityPrefetch(core: SideBCore, token: String, generation: UInt64, chip: String?) {
+        guard chip == nil, !Self.containsAllNamedPrioritySections(sectionRecords) else { return }
+        priorityPrefetchTask = Task { [weak self] in
+            await self?.prefetchPrioritySections(core: core, token: token, generation: generation)
+        }
+    }
+
+    private func prefetchPrioritySections(core: SideBCore, token initialToken: String, generation: UInt64) async {
+        guard generation == requestGeneration, !Task.isCancelled else { return }
+        let interval = signposter.beginInterval("HomePriorityPrefetch")
+        isLoadingMore = true
+        defer {
+            signposter.endInterval("HomePriorityPrefetch", interval)
+            if generation == requestGeneration { isLoadingMore = false }
+        }
+
+        // Three continuation requests cap background network work while covering the usual Home
+        // response split. Stop sooner when every named priority section has arrived or after 12s.
+        let maximumPages = 3
+        let timeBudget: TimeInterval = 12
+        let startedAt = Date()
+        var token = initialToken
+        var usedTokens = Set<String>()
+        for _ in 0..<maximumPages {
+            guard generation == requestGeneration, !Task.isCancelled,
+                  Date().timeIntervalSince(startedAt) < timeBudget,
+                  usedTokens.insert(token).inserted else { break }
+            do {
+                let page = try await fetchContinuation(core: core, token: token)
+                guard generation == requestGeneration, !Task.isCancelled else { return }
+                var existing = Set(sectionRecords.map(Self.sectionSignature))
+                let fresh = page.sections.filter { existing.insert(Self.sectionSignature($0)).inserted }
+                continuationToken = page.continuation
+                if !fresh.isEmpty {
+                    sectionRecords.append(contentsOf: fresh)
+                    apply(records: sectionRecords, continuation: page.continuation, chip: nil)
+                }
+
+                guard let next = page.continuation, !next.isEmpty, next != token,
+                      !usedTokens.contains(next) else {
+                    continuationToken = nil
+                    break
+                }
+                token = next
+                if Self.containsAllNamedPrioritySections(sectionRecords) { break }
+            } catch {
+                break
+            }
+        }
+
+        guard generation == requestGeneration, !Task.isCancelled else { return }
+        let snapshot = FeedSnapshot(records: sectionRecords, continuation: continuationToken)
+        remember(snapshot, for: "")
+        await cacheStore.save(
+            HomeCachedPage(HomePageRecord(chips: chips, sections: sectionRecords, continuation: nil)),
+            for: sessionKey,
+            token: sessionToken
+        )
+    }
+
+    private static func containsAllNamedPrioritySections(_ sections: [HomeSectionRecord]) -> Bool {
+        let titles = Set(sections.map { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        let groups: [[String]] = [
+            ["listen again", "vuelve a escucharlo", "volver a escuchar", "escuchar de nuevo"],
+            ["forgotten favorites", "forgotten favourites", "favoritos olvidados"],
+            ["albums for you", "albumes para ti", "álbumes para ti"],
+            ["from your library", "de tu biblioteca", "de la biblioteca"],
+            ["quick picks", "selecciones rapidas", "selecciones rápidas"],
+        ]
+        return groups.allSatisfy { names in names.contains(where: titles.contains) }
     }
 
     private func remember(_ snapshot: FeedSnapshot, for key: String) {

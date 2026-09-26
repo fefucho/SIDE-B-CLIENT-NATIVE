@@ -1,7 +1,7 @@
 # 🎵 Side B (v2) - Estado del Proyecto y Hoja de Ruta Viva
 
 > **Última actualización**: 2026-09-26  
-> **Estado general**: macOS nativo completado hasta PLAN-008, estabilizado y verificado mediante 60 correcciones técnicas (FIX-001 al FIX-059).  
+> **Estado general**: PLAN-001–008 completados. PLAN-009 implementado y pendiente de validación manual y medición Release.
 > **Objetivo central**: Reconstruir el cliente nativo de YouTube Music para macOS combinando la excelencia visual de **Side B Old** (Liquid Glass, ProMotion, centrado de isla flotante) con el rendimiento del motor en Rust (InnerTube nativo, PoToken, SQLite persistente).
 
 ---
@@ -76,6 +76,7 @@
    - [x] Reemplazo limpio y destrucción de cola previa al cambiar de canción, álbum o playlist.
    - [x] Acciones "Reproducir a continuación" y "Añadir a la cola" operativas en todos los menús de la app.
    - [x] Cabecera de contexto en Fullscreen ("Radio de...", contador de temas y spinner).
+   - [x] Volumen global persistente y cola/última canción por cuenta, restauradas en pausa desde 0:00 al reabrir.
 4. ✅ [`PLAN-004: Catálogo y Búsqueda Reactiva`](plans/PLAN-004-catalogo_y_busqueda.md) (100% completado)
    - [x] Vistas de detalle de Playlist y Álbum con `NativeTrackTableView` a 120 FPS, cabecera fija de 180pt y click derecho completo.
    - [x] Paginación de listas largas por centinela de proximidad (`onNearBottom` con continuaciones tipadas).
@@ -101,6 +102,11 @@
 8. ✅ [`PLAN-008: Corrección y Ejecución de Acciones en Menús`](plans/PLAN-008-fix-acciones-menus-contextuales.md) (100% completado)
    - [x] Solución al ciclo de retención y despacho target/action en `AppKitMenuAdapter.swift`.
    - [x] Implementación del protocolo `NSMenuItemValidation` para habilitación/deshabilitación reactiva.
+9. 🚧 [`PLAN-009: Inicio con tarjetas grandes y canciones compactas`](plans/PLAN-009-inicio-dos-formatos.md) (implementado; pendiente de pruebas manuales)
+   - [x] Contrato Home tipado, caché versión 2 y binding UniFFI regenerado.
+   - [x] Dos estilos por sección, prioridades en «Todos», tarjetas con metadata y filas compactas de cuatro canciones.
+   - [x] Precarga cancelable de hasta 3 continuaciones/12 s, con deduplicación y continuación posterior.
+   - [ ] Validación visual con la cuenta del usuario y medición Release de carga/scroll/memoria.
 
 ---
 
@@ -231,5 +237,3 @@
   - `[FIX-057]`: Optimización ergonómica de la cola de reproducción (~14 a 14.5 canciones visibles en altura estándar).
   - `[FIX-058]`: Ventana borderless transparente con controles header SwiftUI nativos (erradicación definitiva de NSToolbar).
   - `[FIX-059]`: Control de volumen como overlay flotante sin desplazamiento de layout en PlayerBarView.
-
-

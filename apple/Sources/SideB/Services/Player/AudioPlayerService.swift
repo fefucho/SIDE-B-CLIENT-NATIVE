@@ -17,13 +17,19 @@ public final class AudioPlayerService {
     public var volume: Float = 1.0 {
         didSet {
             player.volume = volume
+            preferences.set(volume, forKey: volumeKey)
         }
     }
     private var previousVolume: Float = 1.0
+    private let preferences: UserDefaults
+    private let preferencePrefix: String
+    private var volumeKey: String { "\(preferencePrefix).volume" }
+    private var previousVolumeKey: String { "\(preferencePrefix).previousVolume" }
 
     public func toggleMute() {
         if volume > 0.01 {
             previousVolume = volume
+            preferences.set(previousVolume, forKey: previousVolumeKey)
             volume = 0.0
         } else {
             volume = previousVolume > 0.05 ? previousVolume : 0.75
@@ -47,9 +53,24 @@ public final class AudioPlayerService {
     private var itemStalledObserver: NSObjectProtocol?
     private var hasTriggeredTrackEnd: Bool = false
 
-    public init() {
+    public convenience init() {
+        self.init(preferences: .standard, preferencePrefix: HomeLabConfiguration.enabled ? "sideb.lab" : "sideb")
+    }
+
+    init(preferences: UserDefaults, preferencePrefix: String) {
+        self.preferences = preferences
+        self.preferencePrefix = preferencePrefix
         self.player = AVPlayer()
         self.player.automaticallyWaitsToMinimizeStalling = true
+        if let saved = preferences.object(forKey: volumeKey) as? NSNumber {
+            let value = saved.floatValue
+            if value.isFinite { volume = min(1, max(0, value)) }
+        }
+        if let saved = preferences.object(forKey: previousVolumeKey) as? NSNumber {
+            let value = saved.floatValue
+            if value.isFinite && value > 0.05 { previousVolume = min(1, value) }
+        }
+        player.volume = volume
     }
 
     deinit {

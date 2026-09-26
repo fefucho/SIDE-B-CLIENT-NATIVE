@@ -23,8 +23,9 @@ struct HomeView: View {
                         .accessibilityLabel("Cargando Inicio")
                 }
             } else {
-                HomeFeedCollectionView(
+                HomeFeedTableView(
                     sections: homeViewModel.sections,
+                    isObscured: playerViewModel.isFullscreenPresented,
                     revision: homeViewModel.contentRevision,
                     selectedChip: homeViewModel.selectedChipParams,
                     hasMore: homeViewModel.continuationToken != nil,

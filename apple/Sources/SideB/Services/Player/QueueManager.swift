@@ -30,17 +30,18 @@ public enum QueueContext: Equatable {
 @Observable
 public final class QueueManager {
     // MARK: - Estado de Cola
-    public var queue: [SongItemRecord] = []
-    public var currentIndex: Int = 0
-    public var context: QueueContext? = nil
-    public var contextTitle: String = "Cola de reproducción"
-    public var radioSeed: String? = nil
+    public var onStateChange: (() -> Void)?
+    public var queue: [SongItemRecord] = [] { didSet { onStateChange?() } }
+    public var currentIndex: Int = 0 { didSet { onStateChange?() } }
+    public var context: QueueContext? = nil { didSet { onStateChange?() } }
+    public var contextTitle: String = "Cola de reproducción" { didSet { onStateChange?() } }
+    public var radioSeed: String? = nil { didSet { onStateChange?() } }
     public var continuationToken: String? = nil
     public private(set) var queueToken: UUID = UUID()
     
     // MARK: - Modos y Banderas
-    public var isShuffle: Bool = false
-    public var isRepeat: Bool = false
+    public var isShuffle: Bool = false { didSet { onStateChange?() } }
+    public var isRepeat: Bool = false { didSet { onStateChange?() } }
     public var isLoadingRadio: Bool = false
     public var isLoadingAutoplay: Bool = false
     
@@ -296,4 +297,3 @@ public final class QueueManager {
         return queue[currentIndex]
     }
 }
-

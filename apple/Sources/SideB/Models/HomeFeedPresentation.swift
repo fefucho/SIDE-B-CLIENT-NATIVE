@@ -2,9 +2,8 @@ import Foundation
 import SideBCore
 
 enum HomeSectionStyle: Equatable {
-    case quickPicks
-    case mixes
-    case cards
+    case largeCard
+    case compactSong
 }
 
 struct HomeItemPresentation: Identifiable, Equatable {
@@ -30,21 +29,21 @@ struct HomeSectionPresentation: Identifiable, Equatable {
 
 enum HomePresentationFactory {
     static func sections(from records: [HomeSectionRecord], chip: String?) -> [HomeSectionPresentation] {
-        var titleOccurrences: [String: Int] = [:]
+        var identities: [String: Int] = [:]
         let rawSections = records.compactMap { section -> HomeSectionPresentation? in
             guard !section.items.isEmpty else { return nil }
-            let titleKey = section.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let sectionOccurrence = titleOccurrences[titleKey, default: 0]
-            titleOccurrences[titleKey] = sectionOccurrence + 1
-            let sectionID = "\(chip ?? "all")|\(titleKey)|\(sectionOccurrence)"
+            let identity = sectionIdentity(section)
+            let occurrence = identities[identity, default: 0]
+            identities[identity] = occurrence + 1
+            let sectionID = "\(chip ?? "all")|\(identity)|\(occurrence)"
             let sectionStyle = style(for: section)
             var itemOccurrences: [String: Int] = [:]
             let items = section.items.map { record in
                 let key = "\(record.kind)|\(record.id)"
-                let occurrence = itemOccurrences[key, default: 0]
-                itemOccurrences[key] = occurrence + 1
+                let itemOccurrence = itemOccurrences[key, default: 0]
+                itemOccurrences[key] = itemOccurrence + 1
                 return HomeItemPresentation(
-                    id: "\(sectionID)|\(key)|\(occurrence)",
+                    id: "\(sectionID)|\(key)|\(itemOccurrence)",
                     sectionID: sectionID,
                     style: sectionStyle,
                     record: record
@@ -60,61 +59,46 @@ enum HomePresentationFactory {
             )
         }
 
-        // Orden de categorías en el feed principal (chip == nil):
-        // 1. Listen again / Volver a escuchar
-        // 2. Álbumes para ti / Albums
-        // 3. Quick picks / Elecciones rápidas
-        // 4. Demás secciones en su orden relativo original
         guard chip == nil else { return rawSections }
-
-        return rawSections.enumerated().sorted { a, b in
-            let pA = sectionPriority(for: a.element)
-            let pB = sectionPriority(for: b.element)
-            if pA != pB {
-                return pA < pB
-            }
-            return a.offset < b.offset
+        return rawSections.enumerated().sorted { left, right in
+            let lhs = sectionPriority(for: left.element)
+            let rhs = sectionPriority(for: right.element)
+            return lhs == rhs ? left.offset < right.offset : lhs < rhs
         }.map(\.element)
     }
 
+    private static func sectionIdentity(_ section: HomeSectionRecord) -> String {
+        guard let first = section.items.first, let last = section.items.last else { return section.title }
+        if let browseID = section.moreBrowseId, !browseID.isEmpty {
+            return "more|\(browseID)|\(section.moreParams ?? "")|\(first.kind):\(first.id)|\(last.kind):\(last.id)"
+        }
+        return "items|\(first.kind):\(first.id)|\(last.kind):\(last.id)"
+    }
+
     private static func sectionPriority(for section: HomeSectionPresentation) -> Int {
-        let title = section.title.lowercased()
-        if title.contains("listen again") || title.contains("volver a escuchar") ||
-           title.contains("forgotten") || title.contains("favoritos olvidados") {
-            return 0
+        switch normalized(section.title) {
+        case "listen again", "vuelve a escucharlo", "volver a escuchar", "escuchar de nuevo": return 0
+        case "forgotten favorites", "forgotten favourites", "favoritos olvidados": return 1
+        case "albums for you", "albumes para ti", "álbumes para ti": return 2
+        case "from your library", "de tu biblioteca", "de la biblioteca": return 3
+        case "quick picks", "selecciones rapidas", "selecciones rápidas": return 5
+        default: return 6
         }
-        if title.contains("album") || title.contains("álbum") || section.items.allSatisfy({ $0.record.kind == "album" }) {
-            return 1
-        }
-        if title.contains("quick pick") || title.contains("elecciones") {
-            return 2
-        }
-        return 3
+    }
+
+    private static func normalized(_ title: String) -> String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     private static func style(for section: HomeSectionRecord) -> HomeSectionStyle {
-        let title = section.title.lowercased()
-        let songCount = section.items.lazy.filter { $0.kind == "song" }.count
+        let title = normalized(section.title)
+        let isListenAgain = ["listen again", "vuelve a escucharlo", "volver a escuchar", "escuchar de nuevo"].contains(title)
+        let isForgottenFavorites = ["forgotten favorites", "forgotten favourites", "favoritos olvidados"].contains(title)
+        if isListenAgain || isForgottenFavorites { return .largeCard }
 
-        // Quick picks: requiere al menos 6 items para llenar apropiadamente un layout de 3 filas
-        if section.items.count >= 6 && (
-            title.contains("quick pick") || title.contains("elecciones") ||
-            title.contains("forgotten") || title.contains("favoritos olvidados") ||
-            (songCount * 4 >= section.items.count * 3)
-        ) {
-            return .quickPicks
-        }
-
-        // Mixes: listas de mezclas automáticas o radios personalizadas (excluyendo álbumes y artistas)
-        let isAlbumOrArtist = title.contains("album") || title.contains("álbum") ||
-            title.contains("artist") || title.contains("artista") ||
-            section.items.allSatisfy { $0.kind == "album" || $0.kind == "artist" }
-
-        if !isAlbumOrArtist && (title.contains("mix") || title.contains("para ti") || title.contains("mixed for you")) {
-            return .mixes
-        }
-
-        return .cards
+        let allSongs = section.items.allSatisfy { $0.kind == "song" }
+        let isQuickPicks = ["quick picks", "selecciones rapidas", "selecciones rápidas"].contains(title)
+        if allSongs && (isQuickPicks || section.format == .compactSongs) { return .compactSong }
+        return .largeCard
     }
 }
-

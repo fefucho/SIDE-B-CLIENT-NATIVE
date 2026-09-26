@@ -6,6 +6,8 @@ import SideBCore
 private actor HomeFeedStub {
     private var requests: [(String?, CheckedContinuation<(String, String?), Error>)] = []
     private var countWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var continuationRequests: [(String, CheckedContinuation<(String, String?), Error>)] = []
+    private var continuationCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     func request(chip: String?) async throws -> (String, String?) {
         try await withCheckedThrowingContinuation { continuation in
@@ -30,6 +32,30 @@ private actor HomeFeedStub {
     func fail(_ index: Int) {
         requests[index].1.resume(throwing: StubError.failed)
     }
+
+    func requestContinuation(token: String) async throws -> (String, String?) {
+        try await withCheckedThrowingContinuation { continuation in
+            continuationRequests.append((token, continuation))
+            let ready = continuationCountWaiters.filter { continuationRequests.count >= $0.0 }
+            continuationCountWaiters.removeAll { continuationRequests.count >= $0.0 }
+            ready.forEach { $0.1.resume() }
+        }
+    }
+
+    func waitForContinuationCount(_ count: Int) async {
+        if continuationRequests.count >= count { return }
+        await withCheckedContinuation { continuation in
+            continuationCountWaiters.append((count, continuation))
+        }
+    }
+
+    func succeedContinuation(_ index: Int, title: String, continuation: String?) {
+        continuationRequests[index].1.resume(returning: (title, continuation))
+    }
+
+    func failContinuation(_ index: Int) {
+        continuationRequests[index].1.resume(throwing: StubError.failed)
+    }
 }
 
 private enum StubError: Error { case failed }
@@ -53,8 +79,26 @@ private final class HomeCoreStub: SideBCore, @unchecked Sendable {
             chips: [],
             sections: [HomeSectionRecord(
                 title: title,
+                format: .largeCards,
                 items: [HomeItemRecord(kind: "song", id: title, title: title, subtitle: nil, thumbnail: nil,
-                                       duration: nil, artists: nil, artistId: nil, album: nil, albumId: nil)],
+                                       duration: nil, artists: nil, artistId: nil, album: nil, albumId: nil,
+                                       artistRuns: [], explicit: false)],
+                moreBrowseId: nil, moreParams: nil
+            )],
+            continuation: continuation
+        )
+    }
+
+    override func getHomeContinuation(token: String) async throws -> HomePageRecord {
+        let (title, continuation) = try await feed.requestContinuation(token: token)
+        return HomePageRecord(
+            chips: [],
+            sections: [HomeSectionRecord(
+                title: title,
+                format: .compactSongs,
+                items: [HomeItemRecord(kind: "song", id: title, title: title, subtitle: nil, thumbnail: nil,
+                                       duration: nil, artists: nil, artistId: nil, album: nil, albumId: nil,
+                                       artistRuns: [], explicit: false)],
                 moreBrowseId: nil, moreParams: nil
             )],
             continuation: continuation
@@ -102,6 +146,66 @@ private final class HomeCoreStub: SideBCore, @unchecked Sendable {
     #expect(model.sections.isEmpty)
     #expect(model.selectedChipParams == nil)
     #expect(!model.isLoading)
+}
+
+@Test @MainActor func homePrefetchesPrioritiesAndKeepsContinuationAfterNetworkFailure() async {
+    let core = HomeCoreStub()
+    let model = makeHomeModel()
+    let initial = Task { await model.loadHomeFeed(core: core) }
+    await core.feed.waitForCount(1)
+    await core.feed.succeed(0, title: "Listen again", continuation: "token-1")
+    await initial.value
+
+    await core.feed.waitForContinuationCount(1)
+    await core.feed.succeedContinuation(0, title: "Forgotten favorites", continuation: "token-2")
+    await core.feed.waitForContinuationCount(2)
+    await core.feed.failContinuation(1)
+
+    for _ in 0..<100 where model.isLoadingMore {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.sections.map(\.title) == ["Listen again", "Forgotten favorites"])
+    #expect(model.continuationToken == "token-2")
+    #expect(!model.isLoadingMore)
+}
+
+@Test @MainActor func homeChipChangeDiscardsPendingPriorityContinuation() async {
+    let core = HomeCoreStub()
+    let model = makeHomeModel()
+    let initial = Task { await model.loadHomeFeed(core: core) }
+    await core.feed.waitForCount(1)
+    await core.feed.succeed(0, title: "Listen again", continuation: "token-1")
+    await initial.value
+    await core.feed.waitForContinuationCount(1)
+
+    let chipLoad = Task { await model.loadHomeFeed(core: core, chipParams: "focus") }
+    await core.feed.waitForCount(2)
+    await core.feed.succeed(1, title: "Focus", continuation: nil)
+    await chipLoad.value
+    await core.feed.succeedContinuation(0, title: "Forgotten favorites", continuation: "stale-token")
+    try? await Task.sleep(for: .milliseconds(30))
+
+    #expect(model.selectedChipParams == "focus")
+    #expect(model.sections.map(\.title) == ["Focus"])
+    #expect(!model.isLoadingMore)
+}
+
+@Test @MainActor func homePriorityPrefetchStopsAtRepeatedContinuationToken() async {
+    let core = HomeCoreStub()
+    let model = makeHomeModel()
+    let initial = Task { await model.loadHomeFeed(core: core) }
+    await core.feed.waitForCount(1)
+    await core.feed.succeed(0, title: "Listen again", continuation: "same-token")
+    await initial.value
+    await core.feed.waitForContinuationCount(1)
+    await core.feed.succeedContinuation(0, title: "Forgotten favorites", continuation: "same-token")
+
+    for _ in 0..<100 where model.isLoadingMore {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.sections.map(\.title) == ["Listen again", "Forgotten favorites"])
+    #expect(model.continuationToken == nil)
+    #expect(!model.isLoadingMore)
 }
 
 @Test @MainActor func homeShowsCachedChipAndKeepsItOnRefreshFailure() async {
@@ -214,12 +318,14 @@ import SwiftUI
         artists: "Frank Ocean",
         artistId: "artist_123",
         album: nil,
-        albumId: nil
+        albumId: nil,
+        artistRuns: [],
+        explicit: false
     )
 
     itemView.configure(
         record: record,
-        style: .quickPicks,
+        style: .compactSong,
         currentTrackID: nil,
         isPlaying: false,
         onCard: { cardClicked = true },
@@ -268,6 +374,52 @@ import SwiftUI
     #expect(itemView.isArtistHovered == false)
 }
 
+@Test @MainActor func testHomeLargeCardsFlowMetadataAfterVisibleTitle() {
+    func makeCard(_ name: String, width: CGFloat = 160, artistName: String = "Frank Ocean",
+                  onArtist: @escaping () -> Void = {}) -> HomeItemView {
+        let card = HomeItemView(frame: NSRect(x: 0, y: 0, width: width,
+                                               height: width + HomeItemView.largeCardTextHeight))
+        card.configure(
+            record: HomeItemRecord(
+                kind: "song", id: name, title: name, subtitle: artistName, thumbnail: nil,
+                duration: nil, artists: artistName, artistId: "artist_123", album: nil,
+                albumId: nil, artistRuns: [], explicit: false
+            ),
+            style: .largeCard, currentTrackID: nil, isPlaying: false,
+            onCard: {}, onCover: {}, onTitle: {}, onArtist: onArtist, onAlbum: {}, menuProvider: { nil }
+        )
+        card.layout()
+        return card
+    }
+
+    var artistClicked = false
+    let short = makeCard("Pink + White") { artistClicked = true }
+    let long = makeCard("Super Rich Kids (feat. Earl Sweatshirt)")
+    func label(_ text: String, in card: HomeItemView) -> NSTextField? {
+        card.subviews.compactMap { $0 as? NSTextField }.first { $0.stringValue == text }
+    }
+    let shortTitle = label("Pink + White", in: short)
+    let longTitle = label("Super Rich Kids (feat. Earl Sweatshirt)", in: long)
+    let shortType = label("Canción", in: short)
+    let longType = label("Canción", in: long)
+
+    #expect(shortTitle != nil && longTitle != nil && shortType != nil && longType != nil)
+    guard let shortTitle, let longTitle, let shortType, let longType else { return }
+    #expect(shortTitle.frame.minY == longTitle.frame.minY)
+    #expect(longTitle.frame.height > shortTitle.frame.height)
+    #expect(shortType.frame.minY == shortTitle.frame.maxY + 3)
+    #expect(longType.frame.minY == longTitle.frame.maxY + 3)
+    #expect(shortType.frame.minY < longType.frame.minY)
+    #expect(short.artist.frame.maxY < short.bounds.maxY)
+    short.artist.performClick(nil)
+    #expect(artistClicked)
+
+    let narrow = makeCard("Super Rich Kids (feat. Earl Sweatshirt)", width: 140,
+                          artistName: "Frank Ocean & Tyler, The Creator")
+    #expect(narrow.artist.frame.maxX <= narrow.bounds.maxX)
+    #expect(narrow.artist.frame.maxY <= narrow.bounds.maxY)
+}
+
 @Test func testHomePresentationFactorySectionOrdering() {
     let dummyItem = HomeItemRecord(
         kind: "song",
@@ -279,19 +431,29 @@ import SwiftUI
         artists: "Artist",
         artistId: nil,
         album: nil,
-        albumId: nil
+        albumId: nil,
+        artistRuns: [],
+        explicit: false
     )
     let records = [
-        HomeSectionRecord(title: "Quick picks", items: [dummyItem], moreBrowseId: nil, moreParams: nil),
-        HomeSectionRecord(title: "Mixed for you", items: [dummyItem], moreBrowseId: nil, moreParams: nil),
-        HomeSectionRecord(title: "Albums for you", items: [dummyItem], moreBrowseId: nil, moreParams: nil),
-        HomeSectionRecord(title: "Listen again", items: [dummyItem], moreBrowseId: nil, moreParams: nil),
-        HomeSectionRecord(title: "Similar artists", items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Quick picks", format: .compactSongs, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Mixed for you", format: .largeCards, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Albums for you", format: .largeCards, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Listen again", format: .largeCards, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Forgotten favorites", format: .compactSongs, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "From your library", format: .largeCards, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
+        HomeSectionRecord(title: "Similar artists", format: .largeCards, items: [dummyItem], moreBrowseId: nil, moreParams: nil),
     ]
 
     let ordered = HomePresentationFactory.sections(from: records, chip: nil)
     let titles = ordered.map(\.title)
-    #expect(titles == ["Listen again", "Albums for you", "Quick picks", "Mixed for you", "Similar artists"])
+    #expect(titles == ["Listen again", "Forgotten favorites", "Albums for you", "From your library", "Quick picks", "Mixed for you", "Similar artists"])
+    #expect(ordered.first?.style == .largeCard)
+    #expect(ordered.first(where: { $0.title == "Forgotten favorites" })?.style == .largeCard)
+    #expect(ordered.first(where: { $0.title == "Quick picks" })?.style == .compactSong)
+
+    let translated = HomeSectionRecord(title: "Vuelve a escucharlo", format: .compactSongs,
+                                        items: [dummyItem], moreBrowseId: nil, moreParams: nil)
+    #expect(HomePresentationFactory.sections(from: [translated], chip: nil).first?.id ==
+            HomePresentationFactory.sections(from: [records[3]], chip: nil).first?.id)
 }
-
-

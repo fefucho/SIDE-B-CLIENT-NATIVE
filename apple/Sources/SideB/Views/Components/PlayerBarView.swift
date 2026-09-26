@@ -12,7 +12,8 @@ struct PlayerBarView: View {
     @State private var seekFraction: Double = 0.0
 
     // Estados de interacción
-    @State private var isHoveringVolume: Bool = false
+    @State private var isVolumeExpanded: Bool = false
+    @State private var isHoveringVolumeCapsule: Bool = false
     @State private var isDraggingVolume: Bool = false
     @State private var isHoveringArtist: Bool = false
     @State private var isHoveringAlbum: Bool = false
@@ -23,38 +24,63 @@ struct PlayerBarView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 5) {
-            // MARK: - 1. Barra de Progreso Superior (Diseño Foto 3 con Playhead Vertical)
-            if viewModel.currentTrack != nil {
-                scrubberBarSection
-                    .padding(.horizontal, 24)
+        GeometryReader { geometry in
+            let isCompact = geometry.size.width < 760
+            VStack(spacing: 5) {
+                // MARK: - 1. Barra de Progreso Superior (Diseño Foto 3 con Playhead Vertical)
+                if viewModel.currentTrack != nil {
+                    HStack(spacing: 8) {
+                        timeLabel(
+                            isSeeking && viewModel.duration > 0
+                                ? viewModel.formattedTime(at: seekFraction * viewModel.duration)
+                                : viewModel.formattedElapsed,
+                            alignment: .leading
+                        )
+                        scrubberBarSection
+                        timeLabel(viewModel.formattedDuration, alignment: .trailing)
+                    }
+                    .frame(height: 14)
+                    .padding(.horizontal, 32)
                     .padding(.top, 2)
+                    .offset(y: 3)
+                }
+
+                // MARK: - 2. Fila Principal de Controles
+                HStack(spacing: 14) {
+                    // (a) Controles de Transporte (100% sin reborde)
+                    transportControlsSection
+
+                    Divider()
+                        .frame(height: 22)
+                        .opacity(0.18)
+
+                    // (b) Información de la Pista + Corazón para Likear + Opciones
+                    trackInfoSection(isCompact: isCompact)
+
+                    Spacer(minLength: 12)
+
+                    // (c) Atajos (Letras y Cola), AirPlay, Volumen Adaptativo y Flecha Fullscreen
+                    rightControlsSection
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 2)
             }
-
-            // MARK: - 2. Fila Principal de Controles
-            HStack(spacing: 14) {
-                // (a) Controles de Transporte (100% sin reborde)
-                transportControlsSection
-
-                Divider()
-                    .frame(height: 22)
-                    .opacity(0.18)
-
-                // (b) Información de la Pista + Corazón para Likear + Opciones
-                trackInfoSection
-
-                Spacer(minLength: 12)
-
-                // (c) Atajos (Letras y Cola), AirPlay, Volumen Adaptativo y Flecha Fullscreen
-                rightControlsSection
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 2)
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(maxWidth: 820)
         .frame(height: 74)
         .compatGlass(interactive: true, in: Capsule())
         .shadow(color: .black.opacity(0.18), radius: 14, x: 0, y: 6)
+    }
+
+    private func timeLabel(_ value: String, alignment: Alignment) -> some View {
+        Text(value)
+            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(Color.white.opacity(0.62))
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minWidth: 40, alignment: alignment)
+            .accessibilityLabel(value)
     }
 
     // MARK: - 1. Barra de Estado / Scrubber (Foto 3)
@@ -94,17 +120,17 @@ struct PlayerBarView: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         isSeeking = true
-                        let fraction = max(0.0, min(1.0, value.location.x / width))
+                        let fraction = max(0.0, min(1.0, value.location.x / max(1, width)))
                         seekFraction = fraction
                     }
                     .onEnded { value in
-                        let fraction = max(0.0, min(1.0, value.location.x / width))
+                        let fraction = max(0.0, min(1.0, value.location.x / max(1, width)))
                         viewModel.seek(toFraction: fraction)
                         isSeeking = false
                     }
             )
         }
-        .frame(height: 8)
+        .frame(height: 14)
     }
 
     // MARK: - 2. Controles de Transporte (Izquierda - Sin rebordes, botones más amplios y proporcionados)
@@ -201,9 +227,10 @@ struct PlayerBarView: View {
     }
 
     // MARK: - 3. Track Info (Centro: Carátula 46x46, Título + Corazón, Subtítulo Artista • Álbum y Menú ...)
-    private var trackInfoSection: some View {
-        HStack(spacing: 12) {
-            // Carátula (46x46 para balance vertical exacto)
+    private func trackInfoSection(isCompact: Bool) -> some View {
+        let artworkSize: CGFloat = isCompact ? 40 : 46
+        return HStack(spacing: isCompact ? 8 : 12) {
+            // La carátula cede un poco de ancho solo en ventanas compactas.
             if let thumbnailUrl = viewModel.currentTrack?.thumbnail,
                let url = ImageURLHelper.optimizedThumbnailURL(from: thumbnailUrl, targetPixelSize: 92) {
                 CachedAsyncImage(url: url, targetSize: CGSize(width: 92, height: 92)) { image in
@@ -211,10 +238,10 @@ struct PlayerBarView: View {
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } placeholder: {
-                    fallbackArtwork
+                    fallbackArtwork(size: artworkSize)
                 }
                 .id(viewModel.currentTrack?.videoId ?? url.absoluteString)
-                .frame(width: 46, height: 46)
+                .frame(width: artworkSize, height: artworkSize)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -222,29 +249,18 @@ struct PlayerBarView: View {
                 )
                 .shadow(color: .black.opacity(0.25), radius: 6, y: 2)
             } else {
-                fallbackArtwork
+                fallbackArtwork(size: artworkSize)
             }
 
             // Título con Corazón y Subtítulo Artista • Álbum (sin subrayado)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 7) {
-                    Text(viewModel.currentTrack?.title ?? "Sin reproducción")
-                        .font(.system(size: 13.5, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
+                    ScrollingTrackTitle(title: viewModel.currentTrack?.title ?? "Sin reproducción")
+                        .frame(maxWidth: .infinity)
+                        .layoutPriority(1)
 
-                    if let _ = viewModel.currentTrack {
-                        Button {
-                            viewModel.toggleCurrentTrackLike()
-                        } label: {
-                            Image(systemName: viewModel.isCurrentTrackLiked ? "heart.fill" : "heart")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.sidebAccent : Color.white.opacity(0.60))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(viewModel.isCurrentTrackLiked ? "Quitar de Me Gusta" : "Me Gusta")
+                    if viewModel.currentTrack != nil && (!isCompact || viewModel.errorMessage != nil) {
+                        likeButton
                     }
                 }
 
@@ -311,6 +327,11 @@ struct PlayerBarView: View {
                             .onHover { isHoveringAlbum = $0 }
                             .help("Ver álbum: \(album)")
                         }
+
+                        if isCompact && viewModel.currentTrack != nil {
+                            Spacer(minLength: 2)
+                            likeButton
+                        }
                     }
                 }
             }
@@ -339,9 +360,23 @@ struct PlayerBarView: View {
         }
     }
 
+    private var likeButton: some View {
+        Button {
+            viewModel.toggleCurrentTrackLike()
+        } label: {
+            Image(systemName: viewModel.isCurrentTrackLiked ? "heart.fill" : "heart")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.sidebAccent : Color.white.opacity(0.60))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(viewModel.isCurrentTrackLiked ? "Quitar de Me Gusta" : "Me Gusta")
+    }
+
     // MARK: - 4. Controles Derechos (Shortcuts Letras/Cola, AirPlay, Volumen y Flecha)
     private var rightControlsSection: some View {
-        let isVolumeExpanded = isHoveringVolume || isDraggingVolume
+        let isVolumeExpanded = self.isVolumeExpanded || isDraggingVolume
         let expandedCapsuleWidth: CGFloat = 152
 
         return HStack(spacing: 8) {
@@ -407,7 +442,9 @@ struct PlayerBarView: View {
             // Icono en reposo (cuando no está expandido)
             if !isExpanded {
                 Button {
-                    viewModel.toggleMute()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                        isVolumeExpanded = true
+                    }
                 } label: {
                     Image(systemName: volumeIcon)
                         .font(.system(size: 15, weight: .medium))
@@ -416,14 +453,7 @@ struct PlayerBarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help(viewModel.volume <= 0.01 ? "Activar sonido" : "Silenciar")
-                .onHover { hovering in
-                    if hovering {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
-                            isHoveringVolume = true
-                        }
-                    }
-                }
+                .help("Mostrar control de volumen")
                 .transition(.opacity)
             }
         }
@@ -471,6 +501,11 @@ struct PlayerBarView: View {
                         }
                         .onEnded { _ in
                             isDraggingVolume = false
+                            if !isHoveringVolumeCapsule {
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                                    isVolumeExpanded = false
+                                }
+                            }
                         }
                 )
             }
@@ -488,6 +523,7 @@ struct PlayerBarView: View {
             }
             .buttonStyle(.plain)
             .help(viewModel.volume <= 0.01 ? "Activar sonido" : "Silenciar")
+
         }
         .padding(.leading, 14)
         .padding(.trailing, 10)
@@ -505,10 +541,10 @@ struct PlayerBarView: View {
         .shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 4)
         .contentShape(Capsule())
         .onHover { hovering in
-            if !isDraggingVolume {
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
-                    isHoveringVolume = hovering
-                }
+            isHoveringVolumeCapsule = hovering
+            guard !hovering, !isDraggingVolume else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                isVolumeExpanded = false
             }
         }
     }
@@ -558,10 +594,10 @@ struct PlayerBarView: View {
         }
     }
 
-    private var fallbackArtwork: some View {
+    private func fallbackArtwork(size: CGFloat) -> some View {
         RoundedRectangle(cornerRadius: 7, style: .continuous)
             .fill(Color.secondary.opacity(0.18))
-            .frame(width: 44, height: 44)
+            .frame(width: size, height: size)
             .overlay(
                 Image(systemName: "music.note")
                     .font(.system(size: 16))
@@ -580,5 +616,69 @@ struct PlayerBarView: View {
         } else {
             return "speaker.wave.3.fill"
         }
+    }
+}
+
+private struct TrackTitleWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ScrollingTrackTitle: View {
+    let title: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var textWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+    @State private var isHovered = false
+
+    private struct AnimationKey: Hashable {
+        let title: String
+        let overflow: Int
+        let isHovered: Bool
+        let reduceMotion: Bool
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let overflow = max(0, textWidth - proxy.size.width)
+            Text(title)
+                .font(.system(size: 13.5, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: true, vertical: false)
+                .background {
+                    GeometryReader { measurement in
+                        Color.clear.preference(key: TrackTitleWidthKey.self, value: measurement.size.width)
+                    }
+                }
+                .offset(x: offset)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                .clipped()
+                .contentShape(Rectangle())
+                .onHover { isHovered = $0 }
+                .task(id: AnimationKey(
+                    title: title,
+                    overflow: Int(overflow.rounded()),
+                    isHovered: isHovered,
+                    reduceMotion: reduceMotion
+                )) {
+                    withTransaction(Transaction(animation: nil)) { offset = 0 }
+                    guard overflow > 1, !isHovered, !reduceMotion else { return }
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(for: .seconds(1)) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        let travelTime = max(3.5, Double(overflow) / 24)
+                        withAnimation(.linear(duration: travelTime)) { offset = -overflow }
+                        do { try await Task.sleep(for: .seconds(travelTime + 1.3)) } catch { return }
+                        guard !Task.isCancelled else { return }
+                        withTransaction(Transaction(animation: nil)) { offset = 0 }
+                    }
+                }
+        }
+        .frame(height: 18)
+        .onPreferenceChange(TrackTitleWidthKey.self) { textWidth = $0 }
+        .accessibilityLabel(title)
     }
 }

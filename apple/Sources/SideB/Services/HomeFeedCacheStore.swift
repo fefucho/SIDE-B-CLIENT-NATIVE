@@ -15,19 +15,36 @@ struct HomeCachedPage: Codable, Sendable {
         var record: HomeChipRecord { HomeChipRecord(title: title, params: params) }
     }
 
+    struct ArtistRun: Codable, Sendable {
+        let text: String
+        let id: String?
+    }
+
     struct Section: Codable, Sendable {
         let title: String
+        let format: String
         let items: [Item]
         let moreBrowseId: String?
         let moreParams: String?
         init(_ record: HomeSectionRecord) {
             title = record.title
+            switch record.format {
+            case .compactSongs: format = "compactSongs"
+            case .mixed: format = "mixed"
+            case .largeCards: format = "largeCards"
+            }
             items = record.items.map(Item.init)
             moreBrowseId = record.moreBrowseId
             moreParams = record.moreParams
         }
         var record: HomeSectionRecord {
-            HomeSectionRecord(title: title, items: items.map(\.record), moreBrowseId: moreBrowseId, moreParams: moreParams)
+            let recordFormat: HomeSectionFormatRecord
+            switch format {
+            case "compactSongs": recordFormat = .compactSongs
+            case "mixed": recordFormat = .mixed
+            default: recordFormat = .largeCards
+            }
+            return HomeSectionRecord(title: title, format: recordFormat, items: items.map(\.record), moreBrowseId: moreBrowseId, moreParams: moreParams)
         }
     }
 
@@ -42,19 +59,24 @@ struct HomeCachedPage: Codable, Sendable {
         let artistId: String?
         let album: String?
         let albumId: String?
+        let artistRuns: [ArtistRun]
+        let explicit: Bool
         init(_ record: HomeItemRecord) {
             kind = record.kind; id = record.id; title = record.title
             subtitle = record.subtitle; thumbnail = record.thumbnail; duration = record.duration
             artists = record.artists; artistId = record.artistId; album = record.album; albumId = record.albumId
+            artistRuns = record.artistRuns.map { ArtistRun(text: $0.text, id: $0.id) }
+            explicit = record.explicit
         }
         var record: HomeItemRecord {
             HomeItemRecord(kind: kind, id: id, title: title, subtitle: subtitle, thumbnail: thumbnail,
-                           duration: duration, artists: artists, artistId: artistId, album: album, albumId: albumId)
+                           duration: duration, artists: artists, artistId: artistId, album: album, albumId: albumId,
+                           artistRuns: artistRuns.map { HomeArtistRunRecord(text: $0.text, id: $0.id) }, explicit: explicit)
         }
     }
 
     init(_ page: HomePageRecord) {
-        version = 1
+        version = 2
         savedAt = Date()
         chips = page.chips.map(Chip.init)
         sections = page.sections.map(Section.init)
@@ -79,7 +101,7 @@ actor HomeFeedCacheStore {
         guard activeTokens[key] == token,
               let data = try? Data(contentsOf: fileURL(for: key)),
               let page = try? JSONDecoder().decode(HomeCachedPage.self, from: data),
-              page.version == 1 else { return nil }
+              page.version == 2 else { return nil }
         return page
     }
 

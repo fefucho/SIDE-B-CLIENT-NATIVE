@@ -33,7 +33,6 @@ struct FullscreenNowPlayingView: View {
     @State private var isHoveringArtwork: Bool = false
     @State private var isHoveringArtist: Bool = false
     @State private var isHoveringAlbum: Bool = false
-    @State private var currentLyricIndex: Int? = nil
     @State private var failedMaxQualityURL: URL? = nil
     
     @Namespace private var tabNamespace
@@ -514,52 +513,14 @@ struct FullscreenNowPlayingView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let lyrics = viewModel.lyricsInfo, !lyrics.lines.isEmpty {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForEach(Array(lyrics.lines.enumerated()), id: \.offset) { index, line in
-                            let isCurrentLine = (currentLyricIndex == index)
-                            
-                            Button {
-                                if let ms = line.timeMs {
-                                    viewModel.seek(toFraction: Double(ms) / 1000.0 / viewModel.duration)
-                                }
-                            } label: {
-                                Text(line.text.isEmpty ? "•••" : line.text)
-                                    .font(.system(size: 21, weight: isCurrentLine ? .bold : .medium))
-                                    .foregroundStyle(isCurrentLine ? Color.white : Color.white.opacity(0.35))
-                                    .scaleEffect(isCurrentLine ? 1.02 : 1.0, anchor: .leading)
-                                    .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isCurrentLine)
-                                    .multilineTextAlignment(.leading)
-                            }
-                            .buttonStyle(.plain)
-                            .id(index)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 6)
-                }
-                .scrollIndicators(.hidden)
-                .frame(maxWidth: .infinity)
-                .frame(height: height)
-                .onChange(of: viewModel.currentTime) { _, _ in
-                    let currentTimeMs = UInt64(viewModel.currentTime * 1000)
-                    if let activeIndex = lyrics.lines.firstIndex(where: { line in
-                        guard let start = line.timeMs else { return false }
-                        if let end = line.endTimeMs {
-                            return currentTimeMs >= start && currentTimeMs <= end
-                        }
-                        return currentTimeMs >= start && currentTimeMs <= start + 4000
-                    }) {
-                        if currentLyricIndex != activeIndex {
-                            currentLyricIndex = activeIndex
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                proxy.scrollTo(activeIndex, anchor: .center)
-                            }
-                        }
-                    }
-                }
-            }
+            SyncedLyricsPanel(
+                lyrics: lyrics,
+                currentTime: viewModel.currentTime,
+                duration: viewModel.duration,
+                height: height,
+                onSeek: { viewModel.seek(toFraction: $0) }
+            )
+            .id(viewModel.currentTrack?.videoId)
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "quote.bubble")
@@ -602,6 +563,156 @@ struct FullscreenNowPlayingView: View {
             router?.navigate(to: .album(browseId: browseId))
         } else if let albumName = track.displayAlbum {
             router?.navigate(to: .search(query: "\(albumName) \(track.displayArtist)"))
+        }
+    }
+}
+
+// MARK: - Lyrics presentation and follow mode
+
+enum LyricTiming {
+    static func activeIndex(in lyrics: LyricsInfo, at seconds: Double) -> Int? {
+        guard lyrics.isSynced, seconds.isFinite else { return nil }
+        let timeMs = max(0, seconds) * 1_000
+        var firstTimed: (index: Int, start: UInt64)?
+        var active: (index: Int, start: UInt64)?
+        for (index, line) in lyrics.lines.enumerated() {
+            guard let start = line.timeMs else { continue }
+            if firstTimed == nil || start < firstTimed!.start {
+                firstTimed = (index, start)
+            }
+            if Double(start) <= timeMs && (active == nil || start >= active!.start) {
+                active = (index, start)
+            }
+        }
+        return active?.index ?? firstTimed?.index
+    }
+}
+
+private struct SyncedLyricsPanel: View {
+    let lyrics: LyricsInfo
+    let currentTime: Double
+    let duration: Double
+    let height: CGFloat
+    let onSeek: (Double) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @State private var isFollowing = true
+
+    private var activeIndex: Int? { LyricTiming.activeIndex(in: lyrics, at: currentTime) }
+    private var canFollow: Bool { activeIndex != nil }
+    private var transition: Animation? {
+        reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.86)
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            let currentIndex = activeIndex
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    ForEach(Array(lyrics.lines.enumerated()), id: \.offset) { index, line in
+                        lyricRow(index: index, line: line, activeIndex: currentIndex)
+                            .id(index)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                // Keep natural scroll bounds: the first and last lines only
+                // reach center when the surrounding content allows it.
+                .padding(.vertical, 12)
+            }
+            .scrollIndicators(.hidden)
+            .onScrollPhaseChange { _, phase in
+                // Programmatic scrollTo enters .animating. Only an input gesture
+                // should take control away from the lyric follower.
+                if canFollow && (phase == .tracking || phase == .interacting) {
+                    isFollowing = false
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if canFollow && !isFollowing {
+                    Button {
+                        isFollowing = true
+                        centerCurrentLine(using: proxy, animated: true)
+                    } label: {
+                        Label("Volver a la letra actual", systemImage: "location.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 17)
+                            .padding(.vertical, 10)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .background {
+                        if reduceTransparency {
+                            Capsule().fill(Color.sidebDarkBackground)
+                        } else {
+                            Capsule().fill(.clear).compatGlass(interactive: true, in: Capsule())
+                        }
+                    }
+                    .overlay(Capsule().strokeBorder(.white.opacity(0.18), lineWidth: 0.7))
+                    .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
+                    .padding(.bottom, 18)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .help("Reactivar el seguimiento de letras")
+                    .accessibilityHint("Centra la línea que se está reproduciendo y activa el desplazamiento automático")
+                }
+            }
+            .animation(transition, value: isFollowing)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .onAppear {
+                // Wait for the ScrollView to lay out before the initial centering.
+                Task { @MainActor in
+                    await Task.yield()
+                    if isFollowing { centerCurrentLine(using: proxy, animated: false) }
+                }
+            }
+            .onChange(of: currentIndex) { _, _ in
+                if isFollowing { centerCurrentLine(using: proxy, animated: true) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func lyricRow(index: Int, line: LyricLineInfo, activeIndex: Int?) -> some View {
+        let text = Text(line.text.isEmpty ? "•••" : line.text)
+            .font(.system(size: 25.2, weight: index == activeIndex ? .semibold : .medium))
+            .foregroundStyle(Color.white.opacity(opacity(for: index, activeIndex: activeIndex)))
+            .scaleEffect(index == activeIndex ? 1.025 : 1, anchor: .leading)
+            .shadow(color: .white.opacity(index == activeIndex ? 0.22 : 0), radius: 9)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(transition, value: activeIndex)
+
+        if let milliseconds = line.timeMs, duration.isFinite, duration > 0 {
+            Button {
+                onSeek(min(1, max(0, Double(milliseconds) / 1_000 / duration)))
+            } label: {
+                text
+            }
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(index == activeIndex ? [.isSelected] : [])
+            .accessibilityHint("Ir a esta línea")
+        } else {
+            text
+        }
+    }
+
+    private func opacity(for index: Int, activeIndex: Int?) -> Double {
+        guard let activeIndex else { return 0.82 }
+        if index == activeIndex { return 1 }
+        return abs(index - activeIndex) == 1 ? 0.60 : 0.36
+    }
+
+    private func centerCurrentLine(using proxy: ScrollViewProxy, animated: Bool) {
+        guard let activeIndex else { return }
+        if animated && !reduceMotion {
+            withAnimation(.spring(response: 0.65, dampingFraction: 0.94)) {
+                proxy.scrollTo(activeIndex, anchor: .center)
+            }
+        } else {
+            proxy.scrollTo(activeIndex, anchor: .center)
         }
     }
 }

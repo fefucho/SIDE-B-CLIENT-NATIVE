@@ -19,6 +19,7 @@ enum HomeBenchmarkFixture {
         let sections = names.enumerated().map { sectionIndex, spec in
             HomeSectionRecord(
                 title: spec.0,
+                format: spec.1 == "song" ? .compactSongs : .largeCards,
                 items: (0..<spec.2).map { index in
                     let number = sectionIndex * 100 + index
                     let imageDirectory = ProcessInfo.processInfo.environment["SIDEB_HOME_FIXTURE_IMAGE_DIR"]
@@ -34,7 +35,9 @@ enum HomeBenchmarkFixture {
                         artists: "Artista \(number % 20)",
                         artistId: nil,
                         album: "Álbum \(number % 12)",
-                        albumId: nil
+                        albumId: nil,
+                        artistRuns: [],
+                        explicit: false
                     )
                 },
                 moreBrowseId: "VLfixture-\(sectionIndex)",

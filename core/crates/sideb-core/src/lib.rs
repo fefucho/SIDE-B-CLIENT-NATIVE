@@ -148,6 +148,31 @@ pub struct HomeItemRecord {
     pub artist_id: Option<String>,
     pub album: Option<String>,
     pub album_id: Option<String>,
+    pub artist_runs: Vec<HomeArtistRunRecord>,
+    pub explicit: bool,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct HomeArtistRunRecord {
+    pub text: String,
+    pub id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, uniffi::Enum)]
+pub enum HomeSectionFormatRecord {
+    LargeCards,
+    CompactSongs,
+    Mixed,
+}
+
+impl From<innertube::SectionFormat> for HomeSectionFormatRecord {
+    fn from(format: innertube::SectionFormat) -> Self {
+        match format {
+            innertube::SectionFormat::LargeCards => Self::LargeCards,
+            innertube::SectionFormat::CompactSongs => Self::CompactSongs,
+            innertube::SectionFormat::Mixed => Self::Mixed,
+        }
+    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -159,6 +184,7 @@ pub struct HomeChipRecord {
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct HomeSectionRecord {
     pub title: String,
+    pub format: HomeSectionFormatRecord,
     pub items: Vec<HomeItemRecord>,
     pub more_browse_id: Option<String>,
     pub more_params: Option<String>,
@@ -808,6 +834,7 @@ impl SideBCore {
                 .into_iter()
                 .map(|s| HomeSectionRecord {
                     title: s.title,
+                    format: s.format.into(),
                     items: s
                         .items
                         .into_iter()
@@ -822,6 +849,8 @@ impl SideBCore {
                             artist_id: i.artist_id,
                             album: i.album,
                             album_id: i.album_id,
+                            artist_runs: i.artist_runs.into_iter().map(|run| HomeArtistRunRecord { text: run.text, id: run.id }).collect(),
+                            explicit: i.explicit,
                         })
                         .collect(),
                     more_browse_id: s.more_browse_id,
@@ -855,6 +884,7 @@ impl SideBCore {
                 .into_iter()
                 .map(|s| HomeSectionRecord {
                     title: s.title,
+                    format: s.format.into(),
                     items: s
                         .items
                         .into_iter()
@@ -869,6 +899,8 @@ impl SideBCore {
                             artist_id: i.artist_id,
                             album: i.album,
                             album_id: i.album_id,
+                            artist_runs: i.artist_runs.into_iter().map(|run| HomeArtistRunRecord { text: run.text, id: run.id }).collect(),
+                            explicit: i.explicit,
                         })
                         .collect(),
                     more_browse_id: s.more_browse_id,

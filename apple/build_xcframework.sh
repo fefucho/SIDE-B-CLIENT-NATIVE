@@ -32,10 +32,10 @@ cargo run --bin uniffi-bindgen -- generate \
 
 # Fix Swift 6 Strict Concurrency warnings/errors in generated file
 sed -i '' 's/private var initializationResult/private let initializationResult/g' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
-sed -i '' 's/fileprivate let uniffiContinuationHandleMap/nonisolated(unsafe) fileprivate let uniffiContinuationHandleMap/g' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
-sed -i '' 's/private let uniffiContinuationHandleMap/nonisolated(unsafe) private let uniffiContinuationHandleMap/g' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
-sed -i '' 's/fileprivate class UniffiHandleMap<T>/fileprivate class UniffiHandleMap<T>: @unchecked Sendable/g' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
-sed -i '' 's/private class UniffiHandleMap<T>/private class UniffiHandleMap<T>: @unchecked Sendable/g' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
+sed -i '' 's/^fileprivate let uniffiContinuationHandleMap/nonisolated(unsafe) fileprivate let uniffiContinuationHandleMap/' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
+sed -i '' 's/^private let uniffiContinuationHandleMap/nonisolated(unsafe) private let uniffiContinuationHandleMap/' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
+sed -i '' 's/^fileprivate class UniffiHandleMap<T>\(: @unchecked Sendable\)\{0,1\}/fileprivate class UniffiHandleMap<T>: @unchecked Sendable/' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
+sed -i '' 's/^private class UniffiHandleMap<T>\(: @unchecked Sendable\)\{0,1\}/private class UniffiHandleMap<T>: @unchecked Sendable/' ../apple/$OUTPUT_DIR/sideb_core.swift 2>/dev/null || true
 
 # 4. Crear la estructura del xcframework (usando la librería estática para integrarlo fácil en Xcode)
 cd ../apple

@@ -44,7 +44,7 @@ public struct RecommendedData: Sendable {
 @Observable
 public final class PlayerViewModel {
     // MARK: - Estado de Pista y Stream
-    public var currentTrack: SongItemRecord?
+    public var currentTrack: SongItemRecord? { didSet { schedulePlaybackSave() } }
     public var currentAlbumBrowseId: String?
     public var currentArtistBrowseId: String?
     public var currentPlaylistBrowseId: String?
@@ -117,16 +117,99 @@ public final class PlayerViewModel {
         }
     }
     public let audioService: AudioPlayerService
+    private let playbackStore: PlaybackStateStore
+    private var currentPlaybackIdentity: String?
+    private var isSwitchingPlaybackSession = false
 
-    public init(rustCore: SideBCore? = nil, audioService: AudioPlayerService = .shared) {
+    public convenience init(rustCore: SideBCore? = nil, audioService: AudioPlayerService = .shared) {
+        self.init(rustCore: rustCore, audioService: audioService, playbackStore: PlaybackStateStore())
+    }
+
+    init(rustCore: SideBCore?, audioService: AudioPlayerService, playbackStore: PlaybackStateStore) {
         self.rustCore = rustCore
         self.audioService = audioService
+        self.playbackStore = playbackStore
         setupRemoteCommands()
         setupTrackEndListener()
         setupPlaybackProgressListener()
+        queueManager.onStateChange = { [weak self] in self?.schedulePlaybackSave() }
         if rustCore != nil {
             hydrateLikedSongs()
         }
+    }
+
+    private func playbackSnapshot() -> SavedPlaybackState {
+        SavedPlaybackState(
+            version: SavedPlaybackState.currentVersion,
+            tracks: queueManager.queue.map(SavedPlaybackState.Track.init),
+            currentIndex: queueManager.currentIndex,
+            currentTrack: currentTrack.map(SavedPlaybackState.Track.init),
+            context: SavedPlaybackState.Context(queueManager.context),
+            contextTitle: queueManager.contextTitle,
+            radioSeed: queueManager.radioSeed,
+            isShuffle: queueManager.isShuffle,
+            isRepeat: queueManager.isRepeat
+        )
+    }
+
+    private func schedulePlaybackSave() {
+        guard !isSwitchingPlaybackSession else { return }
+        playbackStore.scheduleSave(playbackSnapshot())
+    }
+
+    public func flushPlaybackState() {
+        guard currentPlaybackIdentity != nil else { return }
+        playbackStore.saveNow(playbackSnapshot())
+    }
+
+    public func switchPlaybackSession(to identity: String) {
+        guard currentPlaybackIdentity != identity else { return }
+        if currentPlaybackIdentity != nil { flushPlaybackState() }
+        isSwitchingPlaybackSession = true
+        resolveStreamTask?.cancel()
+        lyricsTask?.cancel()
+        recommendedTask?.cancel()
+        cancelInFlightRadioTasks()
+        currentPlaybackToken = UUID()
+        audioService.stop()
+        streamInfo = nil
+        currentTrack = nil
+        queueManager.clearQueue()
+        queueManager.isShuffle = false
+        queueManager.isRepeat = false
+        queueManager.isLoadingRadio = false
+        queueManager.isLoadingAutoplay = false
+        currentAlbumBrowseId = nil
+        currentArtistBrowseId = nil
+        currentPlaylistBrowseId = nil
+        recommendedData = nil
+        lyricsInfo = nil
+        errorMessage = nil
+        isLoadingStream = false
+        isLoadingLyrics = false
+        isLoadingRecommended = false
+        playbackStore.activate(identity)
+        currentPlaybackIdentity = identity
+        guard let saved = playbackStore.load() else {
+            updateNowPlayingInfo()
+            isSwitchingPlaybackSession = false
+            return
+        }
+        let tracks = saved.tracks.map(\.song)
+        queueManager.replaceQueue(with: tracks, startingAt: saved.currentIndex,
+                                  context: saved.context?.queueContext,
+                                  contextTitle: saved.contextTitle,
+                                  radioSeed: saved.radioSeed)
+        queueManager.isShuffle = saved.isShuffle
+        queueManager.isRepeat = saved.isRepeat
+        currentTrack = saved.currentTrack?.song
+        currentPlaylistBrowseId = {
+            if case .playlist(let id, _) = queueManager.context { return id }
+            return nil
+        }()
+        isCurrentTrackLiked = currentTrack.map { likedVideoIds.contains($0.videoId) } ?? false
+        updateNowPlayingInfo()
+        isSwitchingPlaybackSession = false
     }
 
     private func setupTrackEndListener() {
@@ -201,6 +284,14 @@ public final class PlayerViewModel {
 
     public var formattedElapsed: String {
         formatTime(currentTime)
+    }
+
+    public var formattedDuration: String {
+        duration.isFinite && duration > 0 ? formatTime(duration) : "—:—"
+    }
+
+    public func formattedTime(at seconds: Double) -> String {
+        formatTime(seconds)
     }
 
     public var formattedRemaining: String {
@@ -1062,8 +1153,22 @@ public final class PlayerViewModel {
 
 
     public func togglePlayPause() {
-        audioService.togglePlayPause()
+        if audioService.isPlaying {
+            audioService.pause()
+        } else {
+            playCurrentTrack()
+        }
         updateNowPlayingPlaybackRate()
+    }
+
+    private func playCurrentTrack() {
+        guard let track = currentTrack else { return }
+        if audioService.avPlayer.currentItem == nil {
+            guard !isLoadingStream else { return }
+            playSongNow(track)
+        } else {
+            audioService.resume()
+        }
     }
 
     public func seek(toFraction fraction: Double) {
@@ -1090,7 +1195,7 @@ public final class PlayerViewModel {
         commandCenter.playCommand.isEnabled = true
         commandCenter.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in
-                self?.audioService.resume()
+                self?.playCurrentTrack()
                 self?.updateNowPlayingPlaybackRate()
             }
             return .success

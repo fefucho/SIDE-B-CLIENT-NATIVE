@@ -16,6 +16,8 @@
 | **PLAN-006** | [`PLAN-006: Estabilización y Rendimiento Home Feed`](PLAN-006-optimizacion_rendimiento_home_feed.md) | Erradicación de regresiones de FPS, diffing estable de listas en SwiftUI, aislamiento de estado y prefetching de imágenes. | ✅ **Completado** |
 | **PLAN-007** | [`PLAN-007: Menús Contextuales por Entidad`](PLAN-007-menus-contextuales.md) | Definición y contrato unificado de acciones contextuales para canciones, álbumes, artistas, playlists y radios. | ✅ **Completado** |
 | **PLAN-008** | [`PLAN-008: Ejecución y Despacho de Acciones en Menús`](PLAN-008-fix-acciones-menus-contextuales.md) | Corrección de selectores target/action, validación de items en AppKit (`NSMenuItemValidation`) y bridging reactivo a SwiftUI. | ✅ **Completado** |
+| **PLAN-009** | [`PLAN-009: Inicio con tarjetas grandes y canciones compactas`](PLAN-009-inicio-dos-formatos.md) | Dos formatos para estantes dinámicos, metadata y enlaces tipados, orden prioritario y precarga acotada. | 🧪 **Validación manual** |
+| **PLAN-010** | [`PLAN-010: Proporciones y alineación de tarjetas en Inicio`](PLAN-010-pulido-tarjetas-inicio.md) | Reducir escala de las tarjetas grandes y alinear título, tipo, distintivo y artista según la altura real del texto. | 🧪 **Validación manual** |
 
 ---
 
