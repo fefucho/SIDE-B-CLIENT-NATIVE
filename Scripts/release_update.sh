@@ -70,27 +70,14 @@ GITHUB_REPO_OWNER="$GITHUB_REPO_OWNER"
 GITHUB_REPO_NAME="$GITHUB_REPO_NAME"
 EOF
 
-# Extraer el reporte de fixes más reciente de FIXES_LOG.md
+# Extraer el reporte acumulado de fixes de FIXES_LOG.md desde el último release
 NOTES_FILE="RELEASE_NOTES.tmp"
 
-if [ -f "$FIXES_FILE" ]; then
-    # Extraer el último fix registrado (desde el último hito ### [FIX-xxx] o [FEAT-xxx])
-    awk '
-        /^### \[(FIX|FEAT)-/ {
-            if (found && count > 0) exit;
-            found=1;
-        }
-        found {
-            print $0;
-            count++;
-        }
-    ' "$FIXES_FILE" > "$NOTES_FILE"
-fi
-
-# Si no hay notas extraídas, generar una plantilla básica
-if [ ! -s "$NOTES_FILE" ]; then
+if [ -f "$SCRIPT_DIR/generate_recap.py" ]; then
+    python3 "$SCRIPT_DIR/generate_recap.py" "$NEW_VERSION" > "$NOTES_FILE"
+else
     cat > "$NOTES_FILE" <<EOF
-### Novedades en Side B v$NEW_VERSION
+### 🎵 Novedades en Side B v$NEW_VERSION
 - Mejoras generales de rendimiento y estabilidad en macOS.
 - Corrección de errores y optimización de reproducción de audio.
 EOF
