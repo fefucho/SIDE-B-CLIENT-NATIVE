@@ -11,11 +11,19 @@ import os
 
 def get_last_tag():
     try:
-        tag = subprocess.check_output(
+        current_tags = subprocess.check_output(
+            ["git", "tag", "--points-at", "HEAD"],
+            stderr=subprocess.DEVNULL
+        ).decode().strip()
+        if current_tags:
+            return subprocess.check_output(
+                ["git", "describe", "--tags", "--abbrev=0", "HEAD^"],
+                stderr=subprocess.DEVNULL
+            ).decode().strip()
+        return subprocess.check_output(
             ["git", "describe", "--tags", "--abbrev=0"],
             stderr=subprocess.DEVNULL
         ).decode().strip()
-        return tag
     except Exception:
         return None
 
