@@ -33,7 +33,9 @@ struct FullscreenNowPlayingView: View {
     @State private var isHoveringArtwork: Bool = false
     @State private var isHoveringArtist: Bool = false
     @State private var isHoveringAlbum: Bool = false
+    @State private var failedOriginalURL: URL? = nil
     @State private var failedMaxQualityURL: URL? = nil
+    @State private var isArtworkFlipped = false
     
     @Namespace private var tabNamespace
     
@@ -135,7 +137,9 @@ struct FullscreenNowPlayingView: View {
             }
         }
         .onChange(of: viewModel.currentTrack?.videoId) { _, _ in
+            failedOriginalURL = nil
             failedMaxQualityURL = nil
+            isArtworkFlipped = false
         }
     }
     
@@ -176,6 +180,7 @@ struct FullscreenNowPlayingView: View {
     
     // MARK: - Módulo Artwork (1:1 Cuadrado con Play/Pause en click y oscurecimiento en hover)
     private func artworkView(size: CGFloat) -> some View {
+        let originalUrl = ImageURLHelper.originalArtworkURL(from: viewModel.currentTrack?.thumbnail)
         let maxQualityUrl = ImageURLHelper.maxQualityArtworkURL(
             from: viewModel.currentTrack?.thumbnail,
             videoId: viewModel.currentTrack?.videoId
@@ -186,6 +191,9 @@ struct FullscreenNowPlayingView: View {
         )
 
         let activeArtworkUrl: URL? = {
+            if let originalUrl, failedOriginalURL != originalUrl {
+                return originalUrl
+            }
             if let maxQualityUrl, failedMaxQualityURL != maxQualityUrl {
                 return maxQualityUrl
             }
@@ -193,12 +201,36 @@ struct FullscreenNowPlayingView: View {
         }()
 
         return ZStack {
+            artworkFront(
+                size: size,
+                originalUrl: originalUrl,
+                maxQualityUrl: maxQualityUrl,
+                activeArtworkUrl: activeArtworkUrl
+            )
+            .opacity(isArtworkFlipped ? 0 : 1)
+            .rotation3DEffect(.degrees(isArtworkFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+            .allowsHitTesting(!isArtworkFlipped)
+
+            artworkInformationCard(size: size)
+                .opacity(isArtworkFlipped ? 1 : 0)
+                .rotation3DEffect(.degrees(isArtworkFlipped ? 0 : -180), axis: (x: 0, y: 1, z: 0))
+                .allowsHitTesting(isArtworkFlipped)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(0.42), radius: 22, x: 0, y: 10)
+        .animation(.easeInOut(duration: 0.48), value: isArtworkFlipped)
+    }
+
+    private func artworkFront(size: CGFloat, originalUrl: URL?, maxQualityUrl: URL?, activeArtworkUrl: URL?) -> some View {
+        ZStack {
             if let activeArtworkUrl {
                 CachedAsyncImage(
                     url: activeArtworkUrl,
                     targetSize: CGSize(width: 1200, height: 1200),
                     onFailure: {
-                        if activeArtworkUrl == maxQualityUrl {
+                        if activeArtworkUrl == originalUrl {
+                            self.failedOriginalURL = originalUrl
+                        } else if activeArtworkUrl == maxQualityUrl {
                             self.failedMaxQualityURL = maxQualityUrl
                         }
                     }
@@ -231,10 +263,119 @@ struct FullscreenNowPlayingView: View {
         }
         .frame(width: size, height: size)
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: .black.opacity(0.42), radius: 22, x: 0, y: 10)
         .onHover { isHoveringArtwork = $0 }
         .onTapGesture {
             viewModel.togglePlayPause()
+        }
+    }
+
+    private func artworkInformationCard(size: CGFloat) -> some View {
+        let song = viewModel.genius.resolution?.song
+        let track = viewModel.currentTrack
+        let displayTitle = song?.title ?? track?.title ?? "Sin título"
+        let displayArtist = song?.artist ?? track?.artists ?? ""
+
+        return VStack(alignment: .leading, spacing: size < 300 ? 8 : 13) {
+            HStack(alignment: .center) {
+                Label("Información", systemImage: "info.circle.fill")
+                    .font(.system(size: size < 300 ? 13 : 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                Spacer(minLength: 4)
+                Button {
+                    isArtworkFlipped = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+                .buttonStyle(.plain)
+                .help("Volver a la carátula")
+            }
+
+            Text(displayTitle)
+                .font(.system(size: size < 300 ? 16 : 20, weight: .bold))
+                .lineLimit(2)
+            if !displayArtist.isEmpty {
+                Text(displayArtist)
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.66))
+                    .lineLimit(1)
+            }
+
+            if let song {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let description = song.description, !description.isEmpty {
+                            Text(description)
+                                .font(.system(size: size < 300 ? 12 : 14))
+                                .foregroundStyle(.white.opacity(0.88))
+                                .textSelection(.enabled)
+                        } else {
+                            Text("No hay descripción disponible para esta canción.")
+                                .foregroundStyle(.white.opacity(0.6))
+                        }
+                        if let date = song.releaseDate, !date.isEmpty {
+                            Label(date, systemImage: "calendar")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        if !song.producers.isEmpty {
+                            informationCredit("Producción", names: song.producers)
+                        }
+                        if !song.writers.isEmpty {
+                            informationCredit("Composición", names: song.writers)
+                        }
+                        ForEach(Array(song.performances.enumerated()), id: \.offset) { _, item in
+                            informationCredit(item.label, names: item.artists)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                Spacer(minLength: 4)
+                if viewModel.genius.phase == .loading {
+                    ProgressView("Buscando información...")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                } else {
+                    VStack(alignment: .center, spacing: 6) {
+                        Text("Sin información adicional en Genius")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.65))
+                        if let album = track?.album, !album.isEmpty {
+                            Label(album, systemImage: "opticaldisc")
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.50))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .center)
+                }
+                Spacer(minLength: 4)
+            }
+
+            Button {
+                viewModel.toggleLyricsPanel(genius: true)
+            } label: {
+                Label("Letras y anotaciones", systemImage: "text.book.closed")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+        }
+        .padding(size < 300 ? 16 : 22)
+        .frame(width: size, height: size, alignment: .topLeading)
+        .background(Color(red: 0.10, green: 0.10, blue: 0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onAppear { if isArtworkFlipped { viewModel.genius.ensureNow() } }
+    }
+
+    private func informationCredit(_ title: String, names: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.primary)
+            Text(names.joined(separator: ", "))
+                .font(.subheadline)
+                .foregroundStyle(.white.opacity(0.86))
         }
     }
 
@@ -242,6 +383,14 @@ struct FullscreenNowPlayingView: View {
     private func artworkPlaceholder(size: CGFloat) -> some View {
         if let thumbStr = viewModel.currentTrack?.thumbnail {
             let cachedImage: NSImage? = {
+                if let url1200 = ImageURLHelper.maxQualityArtworkURL(from: thumbStr),
+                   let img = ImageCache.shared.imageFromMemoryCache(for: url1200, targetSize: CGSize(width: 1200, height: 1200)) {
+                    return img
+                }
+                if let url544 = ImageURLHelper.fallbackThumbnailURL(from: thumbStr, targetPixelSize: 544),
+                   let img = ImageCache.shared.imageFromMemoryCache(for: url544, targetSize: CGSize(width: 1200, height: 1200)) {
+                    return img
+                }
                 if let url300 = ImageURLHelper.optimizedThumbnailURL(from: thumbStr, targetPixelSize: 300),
                    let img = ImageCache.shared.imageFromMemoryCache(for: url300, targetSize: CGSize(width: 300, height: 300)) {
                     return img
@@ -342,12 +491,26 @@ struct FullscreenNowPlayingView: View {
             } label: {
                 Image(systemName: viewModel.isCurrentTrackLiked ? "heart.fill" : "heart")
                     .font(.system(size: width < 340 ? 20 : 22, weight: .semibold))
-                    .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.sidebAccent : Color.white.opacity(0.70))
+                    .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.white : Color.white.opacity(0.70))
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help(viewModel.isCurrentTrackLiked ? "Quitar de Me Gusta" : "Me Gusta")
+
+            Button {
+                isArtworkFlipped.toggle()
+                if isArtworkFlipped { viewModel.genius.ensureNow() }
+            } label: {
+                Image(systemName: isArtworkFlipped ? "info.circle.fill" : "info.circle")
+                    .font(.system(size: width < 340 ? 20 : 22, weight: .semibold))
+                    .foregroundStyle(isArtworkFlipped ? Color.white : Color.white.opacity(0.70))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.currentTrack == nil)
+            .help(isArtworkFlipped ? "Volver a la carátula" : "Información de la canción")
         }
         .frame(width: width, alignment: .leading)
     }
@@ -378,9 +541,9 @@ struct FullscreenNowPlayingView: View {
                     .background {
                         if selectedPanel == panel {
                             Capsule()
-                                .fill(Color.sidebAccent)
+                                .fill(Color.white)
                                 .matchedGeometryEffect(id: "fullscreenTabIndicator", in: tabNamespace)
-                                .shadow(color: Color.sidebAccent.opacity(0.35), radius: 6, x: 0, y: 2)
+                                .shadow(color: Color.white.opacity(0.22), radius: 6, x: 0, y: 2)
                         }
                     }
                     .contentShape(Capsule())
@@ -434,7 +597,7 @@ struct FullscreenNowPlayingView: View {
                 HStack(spacing: 8) {
                     Image(systemName: viewModel.queueManager.context?.iconName ?? "music.note.list")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     
                     Text(viewModel.queueManager.contextTitle)
                         .font(.system(size: 12, weight: .semibold))
@@ -502,8 +665,20 @@ struct FullscreenNowPlayingView: View {
     }
     
     // MARK: - Contenido: Letras Sincronizadas
-    @ViewBuilder
     private func lyricsPanel(height: CGFloat) -> some View {
+        Group {
+            if viewModel.isShowingGeniusLyrics {
+                GeniusPanelView(model: viewModel.genius)
+                    .id(viewModel.currentTrack?.videoId)
+            } else {
+                nativeLyricsPanel(height: height)
+            }
+        }
+        .frame(height: height)
+    }
+
+    @ViewBuilder
+    private func nativeLyricsPanel(height: CGFloat) -> some View {
         if viewModel.isLoadingLyrics {
             VStack(spacing: 12) {
                 ProgressView()

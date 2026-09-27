@@ -45,7 +45,12 @@ public struct RecommendedData: Sendable {
 @Observable
 public final class PlayerViewModel {
     // MARK: - Estado de Pista y Stream
-    public var currentTrack: SongItemRecord? { didSet { schedulePlaybackSave() } }
+    public var currentTrack: SongItemRecord? {
+        didSet {
+            schedulePlaybackSave()
+            if currentTrack == nil { genius.reset() }
+        }
+    }
     public var currentAlbumBrowseId: String?
     public var currentArtistBrowseId: String?
     public var currentPlaylistBrowseId: String?
@@ -57,6 +62,7 @@ public final class PlayerViewModel {
     // MARK: - Modo Fullscreen y Cola
     public var isFullscreenPresented: Bool = false
     public var selectedFullscreenPanel: FullscreenPanel = .queue
+    public var isShowingGeniusLyrics: Bool = false
     public var queueManager: QueueManager = QueueManager()
     public var recommendedTracks: [SongItemRecord] = []
     
@@ -81,6 +87,21 @@ public final class PlayerViewModel {
             }
         }
     }
+
+    public func toggleLyricsPanel(genius: Bool) {
+        if isFullscreenPresented && selectedFullscreenPanel == .lyrics && isShowingGeniusLyrics == genius {
+            dismissFullscreen()
+            return
+        }
+        isShowingGeniusLyrics = genius
+        selectedFullscreenPanel = .lyrics
+        if genius { self.genius.ensureNow() }
+        if !isFullscreenPresented {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                isFullscreenPresented = true
+            }
+        }
+    }
     
     public func dismissFullscreen() {
         guard isFullscreenPresented else { return }
@@ -92,6 +113,7 @@ public final class PlayerViewModel {
     // MARK: - Letras Sincronizadas
     public var lyricsInfo: LyricsInfo?
     public var isLoadingLyrics: Bool = false
+    let genius = GeniusViewModel()
     
     // MARK: - Estado de Me Gusta (Rating)
     public var isCurrentTrackLiked: Bool = false
@@ -106,6 +128,7 @@ public final class PlayerViewModel {
     private var playlistContinuationTask: Task<Void, Never>?
     public private(set) var isLoadingPlaylistContinuation: Bool = false
     private var currentPlaybackToken: UUID = UUID()
+    private var pendingTailSkipToken: UUID?
     private var currentRadioToken: UUID = UUID()
     private var currentAutomixToken: UUID = UUID()
 
@@ -170,8 +193,10 @@ public final class PlayerViewModel {
         resolveStreamTask?.cancel()
         lyricsTask?.cancel()
         recommendedTask?.cancel()
+        genius.reset()
         cancelInFlightRadioTasks()
         currentPlaybackToken = UUID()
+        pendingTailSkipToken = nil
         audioService.stop()
         streamInfo = nil
         currentTrack = nil
@@ -495,7 +520,8 @@ public final class PlayerViewModel {
     public func playSongNow(
         _ song: SongItemRecord,
         overrideAlbumBrowseId: String? = nil,
-        overrideArtistBrowseId: String? = nil
+        overrideArtistBrowseId: String? = nil,
+        deferStreamResolution: Bool = false
     ) {
         // 1. Cancelar tareas en vuelo previas para evitar carreras al skipear
         resolveStreamTask?.cancel()
@@ -505,12 +531,15 @@ public final class PlayerViewModel {
         // 2. Generar token de correlación exclusivo
         let token = UUID()
         self.currentPlaybackToken = token
+        self.pendingTailSkipToken = nil
 
-        // 3. Pausar audio anterior de inmediato para evitar que siga sonando mientras se resuelve el nuevo stream
-        self.audioService.pause()
+        // 3. Soltar el item anterior: si falla la resolución, Play no debe reanudar otra canción.
+        self.audioService.stop()
+        self.streamInfo = nil
 
         // 4. Sincronizar estado visual de inmediato
         self.currentTrack = song
+        self.genius.prepare(for: song, core: self.rustCore, identity: token)
         self.queueManager.syncCurrentIndex(for: song.videoId)
 
         // Limpiar o asignar IDs de procedencia de artista y álbum de la nueva pista
@@ -529,8 +558,8 @@ public final class PlayerViewModel {
             self.recommendedData = nil
         }
 
-        // 4. Cargar letras en paralelo vinculadas al token
-        loadLyrics(for: song, token: token)
+        self.lyricsInfo = nil
+        self.isLoadingLyrics = false
 
         guard let core = rustCore else {
             self.errorMessage = "Núcleo de Rust no inicializado"
@@ -541,6 +570,14 @@ public final class PlayerViewModel {
         // 5. Iniciar resolución de stream con token de correlación
         resolveStreamTask = Task {
             do {
+                // Agrupar saltos manuales rápidos antes de cruzar a UniFFI/InnerTube.
+                // Cancelar una llamada Rust ya iniciada no garantiza detener su trabajo de red.
+                if deferStreamResolution {
+                    try await Task.sleep(for: .milliseconds(180))
+                }
+                try Task.checkCancellation()
+                // Las letras también cruzan UniFFI; no solicitarlas por pistas saltadas durante la espera.
+                self.loadLyrics(for: song, token: token)
                 print("[PlayerViewModel] Resolviendo stream para videoId: \(song.videoId)")
                 let playbackInfo = try await core.resolveStream(videoId: song.videoId, isUpload: song.isUpload)
 
@@ -574,6 +611,7 @@ public final class PlayerViewModel {
                     headers: playbackInfo.headers,
                     expectedDuration: expectedSecs
                 )
+                self.genius.playbackStarted(identity: token)
                 self.updateNowPlayingInfo()
             } catch {
                 guard !Task.isCancelled, self.currentPlaybackToken == token else { return }
@@ -602,9 +640,19 @@ public final class PlayerViewModel {
 
     public func playNext(isManualSkip: Bool = true) {
         if let next = queueManager.nextTrack(isManualSkip: isManualSkip) {
-            playSongNow(next)
+            playSongNow(next, deferStreamResolution: isManualSkip)
             checkAutomixTrigger()
         } else if queueManager.isNearTail {
+            if isManualSkip {
+                // El usuario pidió avanzar aunque la página siguiente aún no llegó.
+                resolveStreamTask?.cancel()
+                lyricsTask?.cancel()
+                currentPlaybackToken = UUID()
+                pendingTailSkipToken = currentPlaybackToken
+                audioService.stop()
+                streamInfo = nil
+                isLoadingStream = false
+            }
             if case .playlist = queueManager.context,
                let continuation = queueManager.continuationToken,
                !continuation.isEmpty {
@@ -617,13 +665,22 @@ public final class PlayerViewModel {
 
     public func playPrevious() {
         if let prev = queueManager.previousTrack() {
-            playSongNow(prev)
+            playSongNow(prev, deferStreamResolution: true)
         }
+    }
+
+    func resumeAfterQueueExtension() {
+        let manualSkipIsPending = pendingTailSkipToken == currentPlaybackToken
+        guard manualSkipIsPending || audioService.hasReachedEnd else { return }
+        pendingTailSkipToken = nil
+        guard let next = queueManager.nextTrack(isManualSkip: manualSkipIsPending) else { return }
+        playSongNow(next)
+        checkAutomixTrigger()
     }
 
     public func playQueueIndex(_ index: Int) {
         if let track = queueManager.selectTrack(at: index) {
-            playSongNow(track)
+            playSongNow(track, deferStreamResolution: true)
             checkAutomixTrigger()
         }
     }
@@ -897,10 +954,7 @@ public final class PlayerViewModel {
                     }
                     
                     // Si el audio finalizó mientras se cargaba la radio y la cola quedó a la espera, reanudar de inmediato
-                    if self.audioService.hasReachedEnd, let next = self.queueManager.nextTrack() {
-                        print("[PlayerViewModel] 📻 Radio recibida tras fin de pista. Continuando con: \(next.title)")
-                        self.playSongNow(next)
-                    }
+                    self.resumeAfterQueueExtension()
 
                     // Si el tema actual no traía álbum (ej. iniciado desde Quick Picks), retroalimentar con el devuelto por la radio
                     if let cur = self.currentTrack, cur.videoId == targetVideoId && cur.album == nil {
@@ -1094,10 +1148,7 @@ public final class PlayerViewModel {
                     print("[PlayerViewModel] Playlist extendida con \(res.items.count) temas adicionales.")
 
                     // Si el audio finalizó esperando la siguiente página, reanudar de inmediato
-                    if self.audioService.hasReachedEnd, let next = self.queueManager.nextTrack() {
-                        print("[PlayerViewModel] ▶️ Pista recibida tras fin de buffer. Continuando con: \(next.title)")
-                        self.playSongNow(next)
-                    }
+                    self.resumeAfterQueueExtension()
                 } else {
                     self.queueManager.continuationToken = nil
                 }
@@ -1140,10 +1191,7 @@ public final class PlayerViewModel {
                     print("[PlayerViewModel] Automix extendió la cola con \(nextResult.items.count) temas.")
 
                     // Si el audio finalizó mientras se extendía el automix, continuar de inmediato
-                    if self.audioService.hasReachedEnd, let next = self.queueManager.nextTrack() {
-                        print("[PlayerViewModel] 📻 Automix recibido tras fin de pista. Continuando con: \(next.title)")
-                        self.playSongNow(next)
-                    }
+                    self.resumeAfterQueueExtension()
                 }
             } catch {
                 guard !Task.isCancelled, self.currentAutomixToken == token else { return }

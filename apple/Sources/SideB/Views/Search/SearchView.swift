@@ -99,7 +99,7 @@ struct SearchView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Color.sidebAccent)
+                .foregroundStyle(.primary)
             
             TextField("Buscar en YouTube Music...", text: $searchViewModel.query)
                 .font(.system(size: 14))
@@ -220,11 +220,11 @@ struct SearchView: View {
                                 HStack(spacing: 5) {
                                     Image(systemName: category.icon)
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(category == .topResult ? Color.sidebAccent : .secondary)
+                                        .foregroundStyle(category == .topResult ? .primary : .secondary)
                                     
                                     Text(category.rawValue.uppercased())
                                         .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(category == .topResult ? Color.sidebAccent : .secondary)
+                                        .foregroundStyle(category == .topResult ? .primary : .secondary)
                                         .tracking(0.5)
                                 }
                                 .padding(.horizontal, 8)
@@ -294,7 +294,7 @@ struct SearchView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "return")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     
                     Text("Presiona Enter para ver todos los resultados")
                         .font(.system(size: 11.5, weight: .medium))
@@ -353,7 +353,7 @@ struct SearchView: View {
                     .padding(.vertical, 5)
                     .background(
                         searchViewModel.selectedFilter == filter
-                            ? Color.sidebAccent
+                            ? Color.white.opacity(0.16)
                             : Color.white.opacity(0.08),
                         in: Capsule()
                     )
@@ -391,7 +391,7 @@ struct SearchView: View {
                                     searchViewModel.selectFilter(.songs, core: rustCore)
                                 }
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.sidebAccent)
+                                .foregroundStyle(.primary)
                                 .buttonStyle(.plain)
                             }
                             
@@ -473,7 +473,7 @@ struct SearchView: View {
                         
                         Text(isArtist ? "Artista" : (card.subtitle ?? card.kind.capitalized))
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Color.sidebAccent)
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                         
                         Text(isArtist ? "Ver discografía completa" : "Reproducir ahora")
@@ -486,7 +486,7 @@ struct SearchView: View {
                     
                     Image(systemName: isArtist ? "arrow.right.circle.fill" : "play.circle.fill")
                         .font(.system(size: 36))
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                         .padding(.trailing, 8)
                 }
                 .padding(16)
@@ -658,8 +658,8 @@ struct SearchView: View {
                 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(playerViewModel.currentTrack?.videoId == song.videoId ? Color.sidebAccent : .primary)
+                        .font(.system(size: 13, weight: playerViewModel.currentTrack?.videoId == song.videoId ? .semibold : .medium))
+                        .foregroundStyle(.primary)
                         .lineLimit(1)
                     
                     Text(song.artists)
@@ -678,7 +678,7 @@ struct SearchView: View {
                 
                 Image(systemName: playerViewModel.currentTrack?.videoId == song.videoId && playerViewModel.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.sidebAccent)
+                    .foregroundStyle(.primary)
                     .padding(.trailing, 6)
             }
             .padding(.horizontal, 10)

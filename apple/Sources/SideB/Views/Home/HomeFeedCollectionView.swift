@@ -10,11 +10,43 @@ struct HomeFeedCollectionView: NSViewRepresentable {
     let hasMore: Bool
     let isLoadingMore: Bool
     let currentTrackID: String?
+    let currentAlbumBrowseId: String?
+    let currentPlaylistBrowseId: String?
     let isPlaying: Bool
     let player: PlayerViewModel
     let router: NavigationRouter?
     let onNavigate: (PageDestination) -> Void
     let onLoadMore: () -> Void
+
+    init(
+        sections: [HomeSectionPresentation],
+        revision: UInt64,
+        selectedChip: String?,
+        hasMore: Bool,
+        isLoadingMore: Bool,
+        currentTrackID: String?,
+        currentAlbumBrowseId: String? = nil,
+        currentPlaylistBrowseId: String? = nil,
+        isPlaying: Bool,
+        player: PlayerViewModel,
+        router: NavigationRouter?,
+        onNavigate: @escaping (PageDestination) -> Void,
+        onLoadMore: @escaping () -> Void
+    ) {
+        self.sections = sections
+        self.revision = revision
+        self.selectedChip = selectedChip
+        self.hasMore = hasMore
+        self.isLoadingMore = isLoadingMore
+        self.currentTrackID = currentTrackID
+        self.currentAlbumBrowseId = currentAlbumBrowseId
+        self.currentPlaylistBrowseId = currentPlaylistBrowseId
+        self.isPlaying = isPlaying
+        self.player = player
+        self.router = router
+        self.onNavigate = onNavigate
+        self.onLoadMore = onLoadMore
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -94,7 +126,10 @@ struct HomeFeedCollectionView: NSViewRepresentable {
                 scroll.reflectScrolledClipView(scroll.contentView)
             }
         } else {
-            if old.currentTrackID != currentTrackID || old.isPlaying != isPlaying {
+            if old.currentTrackID != currentTrackID ||
+               old.currentAlbumBrowseId != currentAlbumBrowseId ||
+               old.currentPlaylistBrowseId != currentPlaylistBrowseId ||
+               old.isPlaying != isPlaying {
                 coordinator.updateVisiblePlayback()
             }
             if old.isLoadingMore != isLoadingMore {
@@ -258,16 +293,107 @@ struct HomeFeedCollectionView: NSViewRepresentable {
                 record: payload.record,
                 style: style,
                 currentTrackID: parent.currentTrackID,
+                currentAlbumBrowseId: parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId,
+                currentPlaylistBrowseId: parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId,
                 isPlaying: parent.isPlaying,
                 onCard: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onCover: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onTitle: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onArtist: { [weak self] in self?.navigateArtist(itemID: id) },
                 onAlbum: { [weak self] in self?.navigateAlbum(itemID: id) },
+                onDirectPlay: { [weak self] in self?.handleDirectPlay(itemID: id) },
                 // El menú debe usar el mismo valor inmutable que pintó esta celda. Consultar
                 // itemByID más tarde puede leer otro snapshot si Inicio se actualiza entretanto.
                 menuProvider: { [weak self, record = payload.record] in self?.menu(record: record) }
             )
+        }
+
+        private func handleDirectPlay(itemID: String) {
+            guard let record = itemByID[itemID]?.record else { return }
+            let isActive = isItemActive(record)
+            if isActive {
+                parent.player.togglePlayPause()
+                return
+            }
+
+            switch record.kind {
+            case "song":
+                parent.player.playWithRadio(SongItemRecord(fromHomeItem: record))
+            case "album":
+                Task {
+                    guard let core = parent.player.rustCore,
+                          let album = try? await core.getAlbum(browseId: record.id),
+                          !album.items.isEmpty else { return }
+                    parent.player.playAlbum(
+                        browseId: album.browseId,
+                        title: album.title,
+                        tracks: album.items,
+                        startingAt: 0,
+                        artistBrowseId: album.artistId
+                    )
+                }
+            case "playlist":
+                let canonicalId = MenuIDNormalizer.canonicalPlaylistId(record.id)
+                Task {
+                    guard let core = parent.player.rustCore,
+                          let pl = try? await core.getPlaylist(playlistId: canonicalId),
+                          !pl.items.isEmpty else { return }
+                    parent.player.playPlaylist(
+                        browseId: pl.id,
+                        title: pl.title,
+                        tracks: pl.items,
+                        startingAt: 0,
+                        continuation: pl.continuation
+                    )
+                }
+            case "artist":
+                parent.player.startRadioForCollection(
+                    id: record.id,
+                    title: record.title,
+                    prefix: "RDAMVM",
+                    directRadioId: nil
+                )
+            default:
+                break
+            }
+        }
+
+        private func isItemActive(_ record: HomeItemRecord) -> Bool {
+            switch record.kind {
+            case "song":
+                return parent.currentTrackID == record.id
+            case "album":
+                let curAlb = parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId
+                if let curAlb {
+                    if MenuIDNormalizer.normalize(curAlb) == MenuIDNormalizer.normalize(record.id) {
+                        return true
+                    }
+                    if let albId = record.albumId, MenuIDNormalizer.normalize(curAlb) == MenuIDNormalizer.normalize(albId) {
+                        return true
+                    }
+                }
+                if case .album(let browseId, _) = parent.player.queueManager.context {
+                    if MenuIDNormalizer.normalize(browseId) == MenuIDNormalizer.normalize(record.id) {
+                        return true
+                    }
+                    if let albId = record.albumId, MenuIDNormalizer.normalize(browseId) == MenuIDNormalizer.normalize(albId) {
+                        return true
+                    }
+                }
+                return false
+            case "playlist":
+                let canonicalId = MenuIDNormalizer.canonicalPlaylistId(record.id)
+                let curPl = parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId
+                if let curPl, MenuIDNormalizer.canonicalPlaylistId(curPl) == canonicalId {
+                    return true
+                }
+                if case .playlist(let browseId, _) = parent.player.queueManager.context {
+                    return MenuIDNormalizer.canonicalPlaylistId(browseId) == canonicalId
+                }
+                return false
+            default:
+                return false
+            }
         }
 
         func activate(at indexPath: IndexPath) {
@@ -389,7 +515,10 @@ struct HomeFeedCollectionView: NSViewRepresentable {
             guard let collection else { return }
             for indexPath in collection.indexPathsForVisibleItems() {
                 (collection.item(at: indexPath) as? HomeCollectionItem)?.content.updatePlayback(
-                    currentTrackID: parent.currentTrackID, isPlaying: parent.isPlaying
+                    currentTrackID: parent.currentTrackID,
+                    currentAlbumBrowseId: parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId,
+                    currentPlaylistBrowseId: parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId,
+                    isPlaying: parent.isPlaying
                 )
             }
         }
@@ -530,7 +659,7 @@ final class HomeSectionHeaderView: NSView, NSCollectionViewElement {
         addSubview(title)
         more.isBordered = false
         more.font = .systemFont(ofSize: 13, weight: .semibold)
-        more.contentTintColor = NSColor.controlAccentColor
+        more.contentTintColor = .labelColor
         more.target = self
         more.action = #selector(openMore)
         more.setAccessibilityLabel("Ver todo")
@@ -628,6 +757,15 @@ final class HomeInteractiveLinkButton: NSButton {
     }
 }
 
+final class HomePlayHitButton: NSButton {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if isEnabled && !isHidden && bounds.width > 0 && bounds.height > 0 {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
+    }
+}
+
 final class HomeItemView: NSView {
     // Dos líneas de título y detalle, más las separaciones. Compartido con el layout del estante.
     static let largeCardTextHeight: CGFloat = 94
@@ -639,13 +777,17 @@ final class HomeItemView: NSView {
         let hovered: Bool
         let selected: Bool
         let playing: Bool
+        let isCurrent: Bool
         let compactSong: Bool
     }
 
     let cardButton = NSButton()
     private let cover = NSButton()
+    let equalizerOverlay = HomeEqualizerOverlayView()
+    private let playButton = HomePlayHitButton()
     private let playSymbol = HomePassthroughImageView()
     private let playImage = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)
+    private let pauseImage = NSImage(systemSymbolName: "pause.fill", accessibilityDescription: nil)
     private let waveformImage = NSImage(systemSymbolName: "waveform", accessibilityDescription: nil)
     private let title = NSTextField(labelWithString: "")
     private let titleButton = NSButton()
@@ -667,6 +809,7 @@ final class HomeItemView: NSView {
     private var measuredTitleLines: CGFloat = 1
     private var measuredTypeWidth: CGFloat = 0
     private var measuredDetailLines: CGFloat = 1
+    private var isCurrent = false
     private var playing = false
     private var renderedAppearance: Appearance?
     var hovered = false { didSet { if hovered != oldValue { refreshAppearance() } } }
@@ -676,6 +819,7 @@ final class HomeItemView: NSView {
     private var onTitle: (() -> Void)?
     private var onArtist: (() -> Void)?
     private var onAlbum: (() -> Void)?
+    private var onDirectPlay: (() -> Void)?
     private var menuProvider: (() -> NSMenu?)?
     private var rawArtistTitle: String = ""
     private var rawAlbumTitle: String = ""
@@ -708,9 +852,18 @@ final class HomeItemView: NSView {
         cover.refusesFirstResponder = true
         cover.focusRingType = .none
 
+        addSubview(equalizerOverlay)
+
         playSymbol.imageScaling = .scaleProportionallyDown
         playSymbol.contentTintColor = .white
         addSubview(playSymbol)
+
+        setup(playButton, selector: #selector(playButtonPressed), font: nil)
+        playButton.title = ""
+        playButton.isTransparent = true
+        playButton.refusesFirstResponder = true
+        playButton.focusRingType = .none
+        playButton.setAccessibilityLabel("Reproducir")
 
         title.font = Self.largeTitleFont
         title.textColor = .labelColor
@@ -768,7 +921,7 @@ final class HomeItemView: NSView {
         setup(more, selector: #selector(morePressed), font: nil)
         more.image = NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "Más opciones")
         more.imagePosition = .imageOnly
-        more.contentTintColor = .secondaryLabelColor
+        more.contentTintColor = NSColor.white.withAlphaComponent(0.78)
         more.setAccessibilityLabel("Más opciones")
         more.refusesFirstResponder = false
         more.focusRingType = .default
@@ -802,7 +955,11 @@ final class HomeItemView: NSView {
         if style == .compactSong {
             layer?.cornerRadius = 14
             cover.frame = NSRect(x: 6, y: 6, width: 44, height: 44)
+            equalizerOverlay.frame = cover.frame
+            equalizerOverlay.setCornerRadius(8)
+            equalizerOverlay.updateStyle(compact: true)
             playSymbol.frame = NSRect(x: 19, y: 19, width: 18, height: 18)
+            playButton.frame = cover.frame
 
             let textLeading: CGFloat = 58
             let moreTrailingMargin: CGFloat = 38
@@ -831,7 +988,15 @@ final class HomeItemView: NSView {
             let art = bounds.width
             let artX: CGFloat = 0
             cover.frame = NSRect(x: artX, y: 0, width: art, height: art)
+            let cornerRadius: CGFloat = representedKind == "artist" ? bounds.width / 2 : 12
+            equalizerOverlay.frame = cover.frame
+            equalizerOverlay.setCornerRadius(cornerRadius)
+            equalizerOverlay.updateStyle(compact: false)
             playSymbol.frame = NSRect(x: artX + art - 36, y: art - 36, width: 28, height: 28)
+            let buttonSize: CGFloat = 46
+            let hitX = max(0, artX + art - buttonSize)
+            let hitY = max(0, art - buttonSize)
+            playButton.frame = NSRect(x: hitX, y: hitY, width: buttonSize, height: buttonSize)
             let badgeWidth: CGFloat = explicitBadge.isHidden ? 0 : 20
             if measuredLargeCardWidth != bounds.width {
                 measuredLargeCardWidth = bounds.width
@@ -931,9 +1096,14 @@ final class HomeItemView: NSView {
     private var representedKind = ""
 
     func configure(
-        record: HomeItemRecord, style: HomeSectionStyle, currentTrackID: String?, isPlaying: Bool,
+        record: HomeItemRecord, style: HomeSectionStyle,
+        currentTrackID: String?,
+        currentAlbumBrowseId: String? = nil,
+        currentPlaylistBrowseId: String? = nil,
+        isPlaying: Bool,
         onCard: @escaping () -> Void, onCover: @escaping () -> Void, onTitle: @escaping () -> Void,
         onArtist: @escaping () -> Void, onAlbum: @escaping () -> Void,
+        onDirectPlay: (() -> Void)? = nil,
         menuProvider: @escaping () -> NSMenu?
     ) {
         let samePresentation = representedRecord == record && self.style == style
@@ -947,9 +1117,15 @@ final class HomeItemView: NSView {
         self.onTitle = onTitle
         self.onArtist = onArtist
         self.onAlbum = onAlbum
+        self.onDirectPlay = onDirectPlay
         self.menuProvider = menuProvider
         if samePresentation {
-            updatePlayback(currentTrackID: currentTrackID, isPlaying: isPlaying)
+            updatePlayback(
+                currentTrackID: currentTrackID,
+                currentAlbumBrowseId: currentAlbumBrowseId,
+                currentPlaylistBrowseId: currentPlaylistBrowseId,
+                isPlaying: isPlaying
+            )
             return
         }
 
@@ -994,7 +1170,12 @@ final class HomeItemView: NSView {
         explicitBadge.isHidden = !record.explicit
 
         refreshArtistAppearance()
-        updatePlayback(currentTrackID: currentTrackID, isPlaying: isPlaying)
+        updatePlayback(
+            currentTrackID: currentTrackID,
+            currentAlbumBrowseId: currentAlbumBrowseId,
+            currentPlaylistBrowseId: currentPlaylistBrowseId,
+            isPlaying: isPlaying
+        )
         refreshAppearance()
         needsLayout = true
 
@@ -1083,8 +1264,24 @@ final class HomeItemView: NSView {
         album.attributedTitle = NSAttributedString(string: text, attributes: attrs)
     }
 
-    func updatePlayback(currentTrackID: String?, isPlaying: Bool) {
-        playing = representedKind == "song" && representedID == currentTrackID && isPlaying
+    func updatePlayback(
+        currentTrackID: String?,
+        currentAlbumBrowseId: String? = nil,
+        currentPlaylistBrowseId: String? = nil,
+        isPlaying: Bool
+    ) {
+        let isSongMatch = representedKind == "song" && representedID == currentTrackID
+        let isAlbumMatch = representedKind == "album" && (
+            (currentAlbumBrowseId != nil && MenuIDNormalizer.normalize(representedID ?? "") == MenuIDNormalizer.normalize(currentAlbumBrowseId!)) ||
+            (representedRecord?.albumId != nil && currentAlbumBrowseId != nil && MenuIDNormalizer.normalize(representedRecord!.albumId!) == MenuIDNormalizer.normalize(currentAlbumBrowseId!))
+        )
+        let isPlaylistMatch = (representedKind == "playlist" || representedKind == "mix") && (
+            currentPlaylistBrowseId != nil && MenuIDNormalizer.canonicalPlaylistId(representedID ?? "") == MenuIDNormalizer.canonicalPlaylistId(currentPlaylistBrowseId!)
+        )
+
+        isCurrent = isSongMatch || isAlbumMatch || isPlaylistMatch
+        playing = isCurrent && isPlaying
+
         let metadata = [typeLabel.stringValue, explicitBadge.isHidden ? nil : "Explícita",
                         rawArtistTitle.isEmpty ? nil : rawArtistTitle,
                         rawAlbumTitle.isEmpty ? nil : rawAlbumTitle]
@@ -1094,6 +1291,7 @@ final class HomeItemView: NSView {
         let actionLabel = "\(action) \(title.stringValue). \(metadata)"
         cover.setAccessibilityLabel(actionLabel)
         cardButton.setAccessibilityLabel(actionLabel)
+        playButton.setAccessibilityLabel(playing ? "Pausar \(title.stringValue)" : "Reproducir \(title.stringValue)")
         cardButton.title = ""
         cardButton.isTransparent = true
         refreshAppearance()
@@ -1104,6 +1302,11 @@ final class HomeItemView: NSView {
         imageTask?.cancel()
         imageTask = nil
         generation &+= 1
+        equalizerOverlay.stopAnimating()
+        isCurrent = false
+        playing = false
+        playButton.isHidden = true
+        onDirectPlay = nil
         representedID = nil
         representedRecord = nil
         representedKind = ""
@@ -1186,9 +1389,8 @@ final class HomeItemView: NSView {
 
     private func refreshAppearance() {
         let next = Appearance(hovered: hovered, selected: isSelectedInFeed,
-                              playing: playing, compactSong: style == .compactSong)
+                              playing: playing, isCurrent: isCurrent, compactSong: style == .compactSong)
         guard renderedAppearance != next else { return }
-        let previous = renderedAppearance
         renderedAppearance = next
         let isHighlighted = hovered || isSelectedInFeed
         if style == .compactSong {
@@ -1198,12 +1400,40 @@ final class HomeItemView: NSView {
             layer?.backgroundColor = NSColor.clear.cgColor
             layer?.borderColor = NSColor.clear.cgColor
         }
-        playSymbol.isHidden = !(hovered || playing)
-        if previous?.playing != playing { playSymbol.image = playing ? waveformImage : playImage }
-        more.contentTintColor = hovered ? .labelColor : .secondaryLabelColor
+
+        if playing {
+            equalizerOverlay.startAnimating()
+            if hovered {
+                playSymbol.isHidden = false
+                playSymbol.image = pauseImage
+                playButton.isHidden = false
+            } else {
+                playSymbol.isHidden = true
+                playButton.isHidden = false
+            }
+        } else if isCurrent {
+            equalizerOverlay.pauseAnimation()
+            if hovered {
+                playSymbol.isHidden = false
+                playSymbol.image = playImage
+                playButton.isHidden = false
+            } else {
+                playSymbol.isHidden = false
+                playSymbol.image = playImage
+                playButton.isHidden = false
+            }
+        } else {
+            equalizerOverlay.stopAnimating()
+            playSymbol.isHidden = !hovered
+            playSymbol.image = playImage
+            playButton.isHidden = !hovered
+        }
+
+        more.contentTintColor = NSColor.white.withAlphaComponent(hovered ? 1.0 : 0.78)
         more.isHidden = (style != .compactSong && !hovered && !isSelectedInFeed)
     }
 
+    @objc private func playButtonPressed() { onDirectPlay?() }
     @objc private func cardPressed() { (onCard ?? onCover ?? onTitle)?() }
     @objc private func coverPressed() { cardPressed() }
     @objc private func titlePressed() { cardPressed() }

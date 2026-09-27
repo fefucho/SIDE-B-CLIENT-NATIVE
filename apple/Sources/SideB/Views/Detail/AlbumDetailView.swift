@@ -138,13 +138,13 @@ struct AlbumDetailView: View {
                         } label: {
                             Text(artist)
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Color.sidebAccent)
+                                .foregroundStyle(.primary)
                         }
                         .buttonStyle(.plain)
                     } else {
                         Text(artist)
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(Color.sidebAccent)
+                            .foregroundStyle(.primary)
                     }
                 }
 
@@ -177,7 +177,7 @@ struct AlbumDetailView: View {
 
                             Text("más")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.sidebAccent)
+                                .foregroundStyle(.primary)
                         }
                         .padding(.top, 2)
                         .contentShape(Rectangle())
@@ -209,7 +209,7 @@ struct AlbumDetailView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .compatGlass(interactive: true, tint: Color.sidebAccent, in: Capsule())
+                        .compatGlass(interactive: true, in: Capsule())
                         .foregroundStyle(.white)
                     }
                     .buttonStyle(.plain)
@@ -244,8 +244,8 @@ struct AlbumDetailView: View {
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .foregroundStyle(album.inLibrary ? Color.sidebAccent : Color.primary)
-                            .compatGlass(interactive: true, tint: album.inLibrary ? Color.sidebAccent.opacity(0.2) : nil, in: Capsule())
+                            .foregroundStyle(.primary)
+                            .compatGlass(interactive: true, in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -278,15 +278,11 @@ struct AlbumDetailView: View {
                             executor: executor
                         )
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.1))
-                            .foregroundStyle(.primary)
-                            .clipShape(Circle())
+                        SideBEllipsisLabel()
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    .accessibilityLabel("Más opciones")
                 }
             }
             .frame(height: 180, alignment: .leading)

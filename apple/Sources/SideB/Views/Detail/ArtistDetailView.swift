@@ -155,7 +155,7 @@ struct ArtistDetailView: View {
 
                             Text("más")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Color.sidebAccent)
+                                .foregroundStyle(.primary)
                         }
                         .padding(.top, 2)
                         .contentShape(Rectangle())
@@ -188,7 +188,7 @@ struct ArtistDetailView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color.sidebAccent)
+                        .background(Color.white.opacity(0.16))
                         .foregroundStyle(.white)
                         .clipShape(Capsule())
                     }
@@ -229,7 +229,7 @@ struct ArtistDetailView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .background(artist.subscribed ? Color.white.opacity(0.18) : Color.white.opacity(0.1))
-                        .foregroundStyle(artist.subscribed ? Color.primary : Color.sidebAccent)
+                        .foregroundStyle(.primary)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -260,15 +260,11 @@ struct ArtistDetailView: View {
                             executor: executor
                         )
                     } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.1))
-                            .foregroundStyle(.primary)
-                            .clipShape(Circle())
+                        SideBEllipsisLabel()
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)
+                    .accessibilityLabel("Más opciones")
                 }
             }
             .frame(height: 180, alignment: .leading)
@@ -291,7 +287,7 @@ struct ArtistDetailView: View {
                         router?.navigate(to: .playlist(browseId: topSongsId))
                     }
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.sidebAccent)
+                    .foregroundStyle(.primary)
                     .buttonStyle(.plain)
                 }
             }
@@ -315,7 +311,7 @@ struct ArtistDetailView: View {
                     if isCurrent && playerViewModel.isPlaying {
                         Image(systemName: "waveform")
                             .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(Color.sidebAccent)
+                            .foregroundStyle(.primary)
                     } else {
                         Text("\(index)")
                             .font(.system(size: 13, weight: .medium))
@@ -380,12 +376,11 @@ struct ArtistDetailView: View {
                         origin: .artist(channelId: viewModel.artist?.channelId ?? browseId)
                     )
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 24)
+                    SideBEllipsisLabel()
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .accessibilityLabel("Más opciones")
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -433,7 +428,7 @@ struct ArtistDetailView: View {
                         }
                     }
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.sidebAccent)
+                    .foregroundStyle(.primary)
                     .buttonStyle(.plain)
                 }
             }

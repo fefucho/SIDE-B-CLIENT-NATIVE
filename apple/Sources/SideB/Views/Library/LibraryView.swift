@@ -48,7 +48,7 @@ struct LibraryView: View {
                             .padding(.vertical, 8)
                             .foregroundStyle(libraryViewModel.selectedPageTab == tab ? Color.white : Color.primary)
                             .background(
-                                libraryViewModel.selectedPageTab == tab ? Color.sidebAccent : Color.primary.opacity(0.08),
+                                libraryViewModel.selectedPageTab == tab ? Color.white.opacity(0.16) : Color.primary.opacity(0.08),
                                 in: Capsule()
                             )
                     }
@@ -160,7 +160,7 @@ struct LibraryView: View {
                             Task { await libraryViewModel.loadSongs(core: rustCore) }
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     }
                     .padding(.horizontal, 32)
                     .padding(.vertical, 8)

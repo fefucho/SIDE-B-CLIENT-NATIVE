@@ -12,11 +12,45 @@ struct HomeFeedTableView: NSViewRepresentable {
     let hasMore: Bool
     let isLoadingMore: Bool
     let currentTrackID: String?
+    let currentAlbumBrowseId: String?
+    let currentPlaylistBrowseId: String?
     let isPlaying: Bool
     let player: PlayerViewModel
     let router: NavigationRouter?
     let onNavigate: (PageDestination) -> Void
     let onLoadMore: () -> Void
+
+    init(
+        sections: [HomeSectionPresentation],
+        isObscured: Bool,
+        revision: UInt64,
+        selectedChip: String?,
+        hasMore: Bool,
+        isLoadingMore: Bool,
+        currentTrackID: String?,
+        currentAlbumBrowseId: String? = nil,
+        currentPlaylistBrowseId: String? = nil,
+        isPlaying: Bool,
+        player: PlayerViewModel,
+        router: NavigationRouter?,
+        onNavigate: @escaping (PageDestination) -> Void,
+        onLoadMore: @escaping () -> Void
+    ) {
+        self.sections = sections
+        self.isObscured = isObscured
+        self.revision = revision
+        self.selectedChip = selectedChip
+        self.hasMore = hasMore
+        self.isLoadingMore = isLoadingMore
+        self.currentTrackID = currentTrackID
+        self.currentAlbumBrowseId = currentAlbumBrowseId
+        self.currentPlaylistBrowseId = currentPlaylistBrowseId
+        self.isPlaying = isPlaying
+        self.player = player
+        self.router = router
+        self.onNavigate = onNavigate
+        self.onLoadMore = onLoadMore
+    }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -90,7 +124,10 @@ struct HomeFeedTableView: NSViewRepresentable {
             }
             coordinator.scheduleHoverUpdate()
         } else {
-            if old.currentTrackID != currentTrackID || old.isPlaying != isPlaying {
+            if old.currentTrackID != currentTrackID ||
+               old.currentAlbumBrowseId != currentAlbumBrowseId ||
+               old.currentPlaylistBrowseId != currentPlaylistBrowseId ||
+               old.isPlaying != isPlaying {
                 coordinator.updateVisiblePlayback()
             }
             if old.isLoadingMore != isLoadingMore {
@@ -149,7 +186,12 @@ struct HomeFeedTableView: NSViewRepresentable {
             guard visible.location != NSNotFound else { return }
             for row in visible.location..<NSMaxRange(visible) where row < parent.sections.count {
                 (table.view(atColumn: 0, row: row, makeIfNecessary: false) as? HomeShelfRowView)?
-                    .updateVisiblePlayback(trackID: parent.currentTrackID, isPlaying: parent.isPlaying)
+                    .updateVisiblePlayback(
+                        trackID: parent.currentTrackID,
+                        albumBrowseId: parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId,
+                        playlistBrowseId: parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId,
+                        isPlaying: parent.isPlaying
+                    )
             }
         }
 
@@ -202,14 +244,105 @@ struct HomeFeedTableView: NSViewRepresentable {
                 record: item.record,
                 style: item.style,
                 currentTrackID: parent.currentTrackID,
+                currentAlbumBrowseId: parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId,
+                currentPlaylistBrowseId: parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId,
                 isPlaying: parent.isPlaying,
                 onCard: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onCover: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onTitle: { [weak self] in self?.activate(itemID: id, fromCover: true) },
                 onArtist: { [weak self] in self?.navigateArtist(itemID: id) },
                 onAlbum: { [weak self] in self?.navigateAlbum(itemID: id) },
+                onDirectPlay: { [weak self] in self?.handleDirectPlay(itemID: id) },
                 menuProvider: { [weak self, record = item.record] in self?.menu(record: record) }
             )
+        }
+
+        private func handleDirectPlay(itemID: String) {
+            guard let record = item(for: itemID)?.record else { return }
+            let isActive = isItemActive(record)
+            if isActive {
+                parent.player.togglePlayPause()
+                return
+            }
+
+            switch record.kind {
+            case "song":
+                parent.player.playWithRadio(SongItemRecord(fromHomeItem: record))
+            case "album":
+                Task {
+                    guard let core = parent.player.rustCore,
+                          let album = try? await core.getAlbum(browseId: record.id),
+                          !album.items.isEmpty else { return }
+                    parent.player.playAlbum(
+                        browseId: album.browseId,
+                        title: album.title,
+                        tracks: album.items,
+                        startingAt: 0,
+                        artistBrowseId: album.artistId
+                    )
+                }
+            case "playlist":
+                let canonicalId = MenuIDNormalizer.canonicalPlaylistId(record.id)
+                Task {
+                    guard let core = parent.player.rustCore,
+                          let pl = try? await core.getPlaylist(playlistId: canonicalId),
+                          !pl.items.isEmpty else { return }
+                    parent.player.playPlaylist(
+                        browseId: pl.id,
+                        title: pl.title,
+                        tracks: pl.items,
+                        startingAt: 0,
+                        continuation: pl.continuation
+                    )
+                }
+            case "artist":
+                parent.player.startRadioForCollection(
+                    id: record.id,
+                    title: record.title,
+                    prefix: "RDAMVM",
+                    directRadioId: nil
+                )
+            default:
+                break
+            }
+        }
+
+        private func isItemActive(_ record: HomeItemRecord) -> Bool {
+            switch record.kind {
+            case "song":
+                return parent.currentTrackID == record.id
+            case "album":
+                let curAlb = parent.currentAlbumBrowseId ?? parent.player.currentAlbumBrowseId
+                if let curAlb {
+                    if MenuIDNormalizer.normalize(curAlb) == MenuIDNormalizer.normalize(record.id) {
+                        return true
+                    }
+                    if let albId = record.albumId, MenuIDNormalizer.normalize(curAlb) == MenuIDNormalizer.normalize(albId) {
+                        return true
+                    }
+                }
+                if case .album(let browseId, _) = parent.player.queueManager.context {
+                    if MenuIDNormalizer.normalize(browseId) == MenuIDNormalizer.normalize(record.id) {
+                        return true
+                    }
+                    if let albId = record.albumId, MenuIDNormalizer.normalize(browseId) == MenuIDNormalizer.normalize(albId) {
+                        return true
+                    }
+                }
+                return false
+            case "playlist":
+                let canonicalId = MenuIDNormalizer.canonicalPlaylistId(record.id)
+                let curPl = parent.currentPlaylistBrowseId ?? parent.player.currentPlaylistBrowseId
+                if let curPl, MenuIDNormalizer.canonicalPlaylistId(curPl) == canonicalId {
+                    return true
+                }
+                if case .playlist(let browseId, _) = parent.player.queueManager.context {
+                    return MenuIDNormalizer.canonicalPlaylistId(browseId) == canonicalId
+                }
+                return false
+            default:
+                return false
+            }
         }
 
         private func activate(itemID: String, fromCover: Bool) {
@@ -412,10 +545,18 @@ private final class HomeShelfRowView: NSView, NSCollectionViewDataSource {
         return cell
     }
 
-    func updateVisiblePlayback(trackID: String?, isPlaying: Bool) {
+    func updateVisiblePlayback(
+        trackID: String?,
+        albumBrowseId: String? = nil,
+        playlistBrowseId: String? = nil,
+        isPlaying: Bool
+    ) {
         for path in collection.indexPathsForVisibleItems() {
             (collection.item(at: path) as? HomeCollectionItem)?.content.updatePlayback(
-                currentTrackID: trackID, isPlaying: isPlaying
+                currentTrackID: trackID,
+                currentAlbumBrowseId: albumBrowseId,
+                currentPlaylistBrowseId: playlistBrowseId,
+                isPlaying: isPlaying
             )
         }
     }

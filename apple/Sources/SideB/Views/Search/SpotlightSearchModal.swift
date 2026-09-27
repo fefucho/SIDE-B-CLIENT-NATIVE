@@ -91,7 +91,7 @@ struct SpotlightSearchModal: View {
         HStack(spacing: 14) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(Color.sidebAccent)
+                .foregroundStyle(.primary)
             
             TextField("Buscar canciones, álbumes, artistas, playlists...", text: $searchViewModel.query)
                 .font(.system(size: 16, weight: .regular))
@@ -180,11 +180,11 @@ struct SpotlightSearchModal: View {
             HStack(spacing: 6) {
                 Image(systemName: category.icon)
                     .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(category == .topResult ? Color.sidebAccent : .secondary)
+                    .foregroundStyle(category == .topResult ? .primary : .secondary)
                 
                 Text(category.rawValue.uppercased())
                     .font(.system(size: 10.5, weight: .bold))
-                    .foregroundStyle(category == .topResult ? Color.sidebAccent : .secondary)
+                    .foregroundStyle(category == .topResult ? .primary : .secondary)
                     .tracking(0.6)
                 
                 Spacer()

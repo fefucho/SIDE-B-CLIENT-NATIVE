@@ -799,7 +799,7 @@ final class NativeTrackCellView: NSTableCellView {
         addSubview(indexLabel)
 
         playingIconView.imageScaling = .scaleProportionallyDown
-        playingIconView.contentTintColor = .sidebAccent
+        playingIconView.contentTintColor = .white
         playingIconView.translatesAutoresizingMaskIntoConstraints = false
         playingIconView.isHidden = true
         addSubview(playingIconView)
@@ -1083,7 +1083,7 @@ final class NativeTrackCellView: NSTableCellView {
 
         let heartSymbol = isLiked ? "heart.fill" : "heart"
         likeButton.image = NSImage(systemSymbolName: heartSymbol, accessibilityDescription: "Me gusta")?.withSymbolConfiguration(buttonSymbolConfig)
-        likeButton.contentTintColor = isLiked ? .sidebAccent : NSColor.white.withAlphaComponent(0.65)
+        likeButton.contentTintColor = isLiked ? .white : NSColor.white.withAlphaComponent(0.65)
         likeButton.alphaValue = isLiked ? 1.0 : 0.0
 
         dislikeButton.image = NSImage(systemSymbolName: "hand.thumbsdown", accessibilityDescription: "No me gusta")?.withSymbolConfiguration(buttonSymbolConfig)

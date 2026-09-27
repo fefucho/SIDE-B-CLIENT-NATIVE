@@ -53,7 +53,10 @@ impl PlayerJsFetcher {
             format!("https://www.youtube.com/s/player/{hash}/player_ias.vflset/en_GB/base.js");
         let js = get(&url).await?.error_for_status()?.text().await?;
         std::fs::write(&cached, &js)?;
-        std::fs::write(self.cache_dir.join("current_hash.txt"), format!("{hash}\n{}", now_secs()))?;
+        std::fs::write(
+            self.cache_dir.join("current_hash.txt"),
+            format!("{hash}\n{}", now_secs()),
+        )?;
         tracing::info!(hash, bytes = js.len(), "fetched fresh player.js");
         Ok(PlayerJs { js, hash })
     }
@@ -83,14 +86,20 @@ impl PlayerJsFetcher {
 /// GET as the desktop web player. Both of this module's requests decide what YouTube hands
 /// back based on the User-Agent, so neither may go out without it.
 async fn get(url: &str) -> reqwest::Result<reqwest::Response> {
-    crate::http::client().get(url).header("User-Agent", WEB_UA).send().await
+    crate::http::client()
+        .get(url)
+        .header("User-Agent", WEB_UA)
+        .send()
+        .await
 }
 
 /// Extract the player hash from `iframe_api`. The URL there has escaped slashes
 /// (`...\/s\/player\/<hash>\/www-widgetapi...`), so the separators are optional-backslash.
 fn extract_hash(iframe_api_js: &str) -> Option<String> {
     let re = Regex::new(r"player\\?/([0-9A-Za-z_-]+)\\?/").ok()?;
-    re.captures(iframe_api_js)?.get(1).map(|m| m.as_str().to_owned())
+    re.captures(iframe_api_js)?
+        .get(1)
+        .map(|m| m.as_str().to_owned())
 }
 
 fn read_if_fresh(path: &Path) -> Option<String> {
@@ -104,7 +113,10 @@ fn read_if_fresh(path: &Path) -> Option<String> {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

@@ -87,8 +87,9 @@ impl PoTokenGenerator {
         // A token stored by a previous run is as good as one minted now, right up to its expiry.
         // A wrong-session or expired one is simply never returned by `cached_session_token`, so it
         // costs nothing to load it optimistically and let the normal validity check reject it.
-        let stored: Option<SessionToken> =
-            db.get_setting(SESSION_TOKEN_KEY).and_then(|raw| serde_json::from_str(&raw).ok());
+        let stored: Option<SessionToken> = db
+            .get_setting(SESSION_TOKEN_KEY)
+            .and_then(|raw| serde_json::from_str(&raw).ok());
         if let Some(t) = &stored {
             tracing::debug!(
                 expires_in = t.expires_at - now_secs(),
@@ -212,7 +213,8 @@ impl PoTokenGenerator {
         let token = timeout(CALL_TIMEOUT, minter.inner.mint(visitor_data))
             .await
             .map_err(|_| botguard::Error::Transient("session mint timed out".into()))??;
-        self.store_session_token(visitor_data, token.clone(), good_for).await;
+        self.store_session_token(visitor_data, token.clone(), good_for)
+            .await;
         Ok(token)
     }
 
@@ -251,7 +253,8 @@ impl PoTokenGenerator {
         // `Instant`, while the session token is written to disk and needs wall-clock.
         let good_for = Duration::from_secs(b.lifetime_secs).saturating_sub(EXPIRY_MARGIN);
 
-        self.store_session_token(session_id, b.session_token, good_for).await;
+        self.store_session_token(session_id, b.session_token, good_for)
+            .await;
 
         Ok(Minter {
             session_id: session_id.to_owned(),
@@ -306,7 +309,10 @@ impl PoTokenGenerator {
     // ponytail: called from a periodic task in lib.rs; no self-spawned monitor.
     pub async fn teardown_if_idle(&self, idle: Duration) {
         let mut guard = self.minter.lock().await;
-        if guard.as_ref().is_some_and(|m| m.last_used.elapsed() >= idle) {
+        if guard
+            .as_ref()
+            .is_some_and(|m| m.last_used.elapsed() >= idle)
+        {
             *guard = None;
             tracing::debug!("BotGuard runtime torn down (idle)");
         }
@@ -322,7 +328,11 @@ mod tests {
     use super::*;
 
     fn token(session_id: &str, expires_at: i64) -> SessionToken {
-        SessionToken { session_id: session_id.to_owned(), token: "tok".to_owned(), expires_at }
+        SessionToken {
+            session_id: session_id.to_owned(),
+            token: "tok".to_owned(),
+            expires_at,
+        }
     }
 
     /// The self-heal sequence: orchestrator.rs invalidates the session token while the minter is
@@ -335,16 +345,24 @@ mod tests {
         let db = Arc::new(Db::open(std::path::Path::new(":memory:")).unwrap());
         let g = PoTokenGenerator::new(db);
 
-        g.store_session_token("vd123", "tok".to_owned(), Duration::from_secs(3600)).await;
-        assert_eq!(g.cached_session_token("vd123").await.as_deref(), Some("tok"));
+        g.store_session_token("vd123", "tok".to_owned(), Duration::from_secs(3600))
+            .await;
+        assert_eq!(
+            g.cached_session_token("vd123").await.as_deref(),
+            Some("tok")
+        );
         assert!(g.db.get_setting(SESSION_TOKEN_KEY).is_some());
 
         g.invalidate_session_token().await;
         assert_eq!(g.cached_session_token("vd123").await, None);
         assert_eq!(g.db.get_setting(SESSION_TOKEN_KEY), None);
 
-        g.store_session_token("vd123", "tok2".to_owned(), Duration::from_secs(3600)).await;
-        assert_eq!(g.cached_session_token("vd123").await.as_deref(), Some("tok2"));
+        g.store_session_token("vd123", "tok2".to_owned(), Duration::from_secs(3600))
+            .await;
+        assert_eq!(
+            g.cached_session_token("vd123").await.as_deref(),
+            Some("tok2")
+        );
     }
 
     #[test]
@@ -361,7 +379,10 @@ mod tests {
 
     #[test]
     fn session_token_invalid_when_expired() {
-        assert!(!token("vd123", 1_000).valid_for("vd123", 1_000), "expiry is exclusive");
+        assert!(
+            !token("vd123", 1_000).valid_for("vd123", 1_000),
+            "expiry is exclusive"
+        );
         assert!(!token("vd123", 1_000).valid_for("vd123", 1_001));
     }
 

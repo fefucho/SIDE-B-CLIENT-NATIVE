@@ -62,7 +62,6 @@ struct SidebarView: View {
                         let likedRow = sidebarRow(
                             title: "Tus Me Gusta",
                             icon: "heart.fill",
-                            iconColor: isLikedMusicSelected ? .white : Color.sidebAccent,
                             isSelected: isLikedMusicSelected
                         ) {
                             navigate(to: .playlist(browseId: "LM"))
@@ -87,7 +86,6 @@ struct SidebarView: View {
                         sidebarRow(
                             title: "Biblioteca",
                             icon: "books.vertical.fill",
-                            iconColor: router.currentPage == .library ? .white : Color.sidebAccent,
                             isSelected: router.currentPage == .library
                         ) {
                             if router.currentPage == .library {
@@ -194,7 +192,7 @@ struct SidebarView: View {
                                 }
                                 .font(.system(size: 11, weight: .semibold))
                                 .buttonStyle(.plain)
-                                .foregroundStyle(Color.sidebAccent)
+                                .foregroundStyle(.primary)
                             }
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.vertical, 8)
@@ -362,7 +360,6 @@ struct SidebarView: View {
     private func sidebarRow(
         title: String,
         icon: String,
-        iconColor: Color? = nil,
         shortcutBadge: String? = nil,
         isSelected: Bool,
         action: @escaping () -> Void
@@ -371,7 +368,7 @@ struct SidebarView: View {
             HStack(spacing: 11) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(isSelected ? Color.white : (iconColor ?? Color.primary.opacity(0.68)))
+                    .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.68))
                     .frame(width: 20)
                 
                 Text(title)

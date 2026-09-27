@@ -123,6 +123,19 @@ extension View {
 
 // MARK: - SideBEllipsisMenuButton
 
+/// Apariencia común para las opciones de canciones, colecciones y reproductor.
+struct SideBEllipsisLabel: View {
+    var iconSize: CGFloat = 13
+
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.system(size: iconSize, weight: .semibold))
+            .foregroundStyle(Color.white.opacity(0.78))
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle())
+    }
+}
+
 /// Botón estándar «…» que despliega exactamente las mismas opciones que el clic secundario.
 struct SideBEllipsisMenuButton: View {
     let target: MenuTarget
@@ -163,12 +176,10 @@ struct SideBEllipsisMenuButton: View {
             )
             .labelStyle(.titleAndIcon)
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: iconSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+            SideBEllipsisLabel(iconSize: iconSize)
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Más opciones")
     }
 }

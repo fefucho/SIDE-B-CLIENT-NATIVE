@@ -5,6 +5,17 @@ import Foundation
 @Suite("Tests de Calidad de Imagen y Fullscreen")
 struct FullscreenImageQualityTests {
 
+    @Test("Fullscreen puede solicitar el original de Google y conserva un respaldo de 1200px")
+    func testOriginalArtworkURL() {
+        let input = "https://lh3.googleusercontent.com/cover=w544-h544-l90-rj"
+        #expect(ImageURLHelper.originalArtworkURL(from: input)?.absoluteString == "https://lh3.googleusercontent.com/cover=s0?imgmax=0")
+        #expect(ImageURLHelper.maxQualityArtworkURL(from: input)?.absoluteString == "https://lh3.googleusercontent.com/cover=w1200-h1200-l90-rj")
+
+        let avatar = "https://yt3.ggpht.com/avatar=s576-c-k-c0x00ffffff-no-rj"
+        #expect(ImageURLHelper.originalArtworkURL(from: avatar)?.absoluteString == "https://yt3.ggpht.com/avatar=s0?imgmax=0")
+        #expect(ImageURLHelper.originalArtworkURL(from: "https://i.ytimg.com/vi/id/hqdefault.jpg") == nil)
+    }
+
     @Test("Google CDN con sufijo w-h se escala a 1200x1200px para Fullscreen")
     func testGoogleCDNWidthHeightUpscaling() {
         let input = "https://lh3.googleusercontent.com/abc123xyz=w544-h544-l90-rj"

@@ -96,6 +96,24 @@ public enum ImageURLHelper {
         return resultURL
     }
 
+    /// Pide el original de una carátula de Google cuando está disponible.
+    /// Solo la carátula principal de Fullscreen debe usar esta URL: puede ser mucho más pesada.
+    public static func originalArtworkURL(from urlString: String?) -> URL? {
+        guard let urlString,
+              let url = URL(string: urlString),
+              url.host == "lh3.googleusercontent.com" || url.host == "yt3.ggpht.com"
+        else { return nil }
+
+        let range = NSRange(location: 0, length: urlString.utf16.count)
+        guard let match = sizeRegex?.firstMatch(in: urlString, range: range)
+            ?? singleSizeRegex?.firstMatch(in: urlString, range: range),
+            let replacementRange = Range(match.range, in: urlString)
+        else { return nil }
+
+        let original = String(urlString[..<replacementRange.lowerBound]) + "=s0?imgmax=0"
+        return URL(string: original)
+    }
+
     /// Devuelve una URL de respaldo estándar en caso de que una miniatura de máxima resolución falle.
     public static func fallbackThumbnailURL(from urlString: String?, targetPixelSize: Int = 544) -> URL? {
         return optimizedThumbnailURL(from: urlString, targetPixelSize: targetPixelSize)

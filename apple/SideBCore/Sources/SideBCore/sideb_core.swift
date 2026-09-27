@@ -399,6 +399,22 @@ fileprivate class UniffiHandleMap<T>: @unchecked Sendable {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt32: FfiConverterPrimitive {
+    typealias FfiType = UInt32
+    typealias SwiftType = UInt32
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt32 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
     typealias FfiType = UInt64
     typealias SwiftType = UInt64
@@ -524,6 +540,10 @@ public protocol SideBCoreProtocol : AnyObject {
      */
     func applySongLibraryAction(token: String) async throws 
     
+    func chooseGenius(track: GeniusTrackRecord, songId: Int64) async throws  -> GeniusResolutionRecord
+    
+    func clearGeniusChoice(track: GeniusTrackRecord) 
+    
     /**
      * Create a playlist and return the server's playlist ID.
      */
@@ -559,6 +579,21 @@ public protocol SideBCoreProtocol : AnyObject {
     func getArtistJson(browseId: String) async throws  -> String
     
     func getCookie()  -> String?
+    
+    func getGeniusAnnotations(songId: Int64, page: UInt32, force: Bool) async throws  -> GeniusAnnotationsRecord
+    
+    /**
+     * Read-only cache probe used before the delayed background network lookup.
+     */
+    func getGeniusCached(track: GeniusTrackRecord) async  -> GeniusResolutionRecord?
+    
+    func getGeniusCachedAnnotations(songId: Int64, page: UInt32) async  -> GeniusAnnotationsRecord?
+    
+    func getGeniusCachedLyrics(songId: Int64) async  -> GeniusLyricsRecord?
+    
+    func getGeniusLyrics(songId: Int64, songUrl: String, force: Bool) async throws  -> GeniusLyricsRecord
+    
+    func getGeniusMetrics()  -> GeniusMetricsRecord
     
     /**
      * Fetch user's playback history grouped by day.
@@ -707,6 +742,10 @@ public protocol SideBCoreProtocol : AnyObject {
      */
     func removeFromPlaylist(playlistId: String, videoId: String, setVideoId: String) async throws 
     
+    func reportGeniusMiss(track: GeniusTrackRecord, status: GeniusMatchStatusRecord, candidateIds: [Int64]) throws 
+    
+    func resolveGenius(track: GeniusTrackRecord, force: Bool) async throws  -> GeniusResolutionRecord
+    
     /**
      * Resolve a video ID to a validated, high-quality audio stream URL for native AVPlayer.
      */
@@ -726,6 +765,8 @@ public protocol SideBCoreProtocol : AnyObject {
      * Search cards filtered by category ("albums", "artists", "playlists").
      */
     func searchCards(query: String, category: String) async throws  -> [BrowseCardRecord]
+    
+    func searchGenius(query: String) async throws  -> [GeniusCandidateRecord]
     
     /**
      * Search songs, returning a typed list of SongItemRecord.
@@ -854,6 +895,30 @@ open func applySongLibraryAction(token: String)async throws  {
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeSideBError.lift
         )
+}
+    
+open func chooseGenius(track: GeniusTrackRecord, songId: Int64)async throws  -> GeniusResolutionRecord {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_choose_genius(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeGeniusTrackRecord.lower(track),FfiConverterInt64.lower(songId)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGeniusResolutionRecord.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
+open func clearGeniusChoice(track: GeniusTrackRecord) {try! rustCall() {
+    uniffi_sideb_core_fn_method_sidebcore_clear_genius_choice(self.uniffiClonePointer(),
+        FfiConverterTypeGeniusTrackRecord.lower(track),$0
+    )
+}
 }
     
     /**
@@ -1013,6 +1078,104 @@ open func getArtistJson(browseId: String)async throws  -> String {
 open func getCookie() -> String? {
     return try!  FfiConverterOptionString.lift(try! rustCall() {
     uniffi_sideb_core_fn_method_sidebcore_get_cookie(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+open func getGeniusAnnotations(songId: Int64, page: UInt32, force: Bool)async throws  -> GeniusAnnotationsRecord {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_genius_annotations(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(songId),FfiConverterUInt32.lower(page),FfiConverterBool.lower(force)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGeniusAnnotationsRecord.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
+    /**
+     * Read-only cache probe used before the delayed background network lookup.
+     */
+open func getGeniusCached(track: GeniusTrackRecord)async  -> GeniusResolutionRecord? {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_genius_cached(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeGeniusTrackRecord.lower(track)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeGeniusResolutionRecord.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+open func getGeniusCachedAnnotations(songId: Int64, page: UInt32)async  -> GeniusAnnotationsRecord? {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_genius_cached_annotations(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(songId),FfiConverterUInt32.lower(page)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeGeniusAnnotationsRecord.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+open func getGeniusCachedLyrics(songId: Int64)async  -> GeniusLyricsRecord? {
+    return
+        try!  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_genius_cached_lyrics(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(songId)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterOptionTypeGeniusLyricsRecord.lift,
+            errorHandler: nil
+            
+        )
+}
+    
+open func getGeniusLyrics(songId: Int64, songUrl: String, force: Bool)async throws  -> GeniusLyricsRecord {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_genius_lyrics(
+                    self.uniffiClonePointer(),
+                    FfiConverterInt64.lower(songId),FfiConverterString.lower(songUrl),FfiConverterBool.lower(force)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGeniusLyricsRecord.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
+open func getGeniusMetrics() -> GeniusMetricsRecord {
+    return try!  FfiConverterTypeGeniusMetricsRecord.lift(try! rustCall() {
+    uniffi_sideb_core_fn_method_sidebcore_get_genius_metrics(self.uniffiClonePointer(),$0
     )
 })
 }
@@ -1570,6 +1733,32 @@ open func removeFromPlaylist(playlistId: String, videoId: String, setVideoId: St
         )
 }
     
+open func reportGeniusMiss(track: GeniusTrackRecord, status: GeniusMatchStatusRecord, candidateIds: [Int64])throws  {try rustCallWithError(FfiConverterTypeSideBError.lift) {
+    uniffi_sideb_core_fn_method_sidebcore_report_genius_miss(self.uniffiClonePointer(),
+        FfiConverterTypeGeniusTrackRecord.lower(track),
+        FfiConverterTypeGeniusMatchStatusRecord.lower(status),
+        FfiConverterSequenceInt64.lower(candidateIds),$0
+    )
+}
+}
+    
+open func resolveGenius(track: GeniusTrackRecord, force: Bool)async throws  -> GeniusResolutionRecord {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_resolve_genius(
+                    self.uniffiClonePointer(),
+                    FfiConverterTypeGeniusTrackRecord.lower(track),FfiConverterBool.lower(force)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterTypeGeniusResolutionRecord.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
     /**
      * Resolve a video ID to a validated, high-quality audio stream URL for native AVPlayer.
      */
@@ -1646,6 +1835,23 @@ open func searchCards(query: String, category: String)async throws  -> [BrowseCa
             completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterSequenceTypeBrowseCardRecord.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
+open func searchGenius(query: String)async throws  -> [GeniusCandidateRecord] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_search_genius(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(query)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeGeniusCandidateRecord.lift,
             errorHandler: FfiConverterTypeSideBError.lift
         )
 }
@@ -2353,6 +2559,1057 @@ public func FfiConverterTypeBrowseCardRecord_lift(_ buf: RustBuffer) throws -> B
 #endif
 public func FfiConverterTypeBrowseCardRecord_lower(_ value: BrowseCardRecord) -> RustBuffer {
     return FfiConverterTypeBrowseCardRecord.lower(value)
+}
+
+
+public struct GeniusAnnotationRecord {
+    public var id: Int64
+    public var referentId: Int64
+    public var fragment: String
+    public var body: String
+    public var author: String?
+    public var verified: Bool
+    public var votes: Int64
+    public var shareUrl: String?
+    public var bodySpans: [GeniusAnnotationSpanRecord]
+    public var imageUrls: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, referentId: Int64, fragment: String, body: String, author: String?, verified: Bool, votes: Int64, shareUrl: String?, bodySpans: [GeniusAnnotationSpanRecord], imageUrls: [String]) {
+        self.id = id
+        self.referentId = referentId
+        self.fragment = fragment
+        self.body = body
+        self.author = author
+        self.verified = verified
+        self.votes = votes
+        self.shareUrl = shareUrl
+        self.bodySpans = bodySpans
+        self.imageUrls = imageUrls
+    }
+}
+
+
+
+extension GeniusAnnotationRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusAnnotationRecord, rhs: GeniusAnnotationRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.referentId != rhs.referentId {
+            return false
+        }
+        if lhs.fragment != rhs.fragment {
+            return false
+        }
+        if lhs.body != rhs.body {
+            return false
+        }
+        if lhs.author != rhs.author {
+            return false
+        }
+        if lhs.verified != rhs.verified {
+            return false
+        }
+        if lhs.votes != rhs.votes {
+            return false
+        }
+        if lhs.shareUrl != rhs.shareUrl {
+            return false
+        }
+        if lhs.bodySpans != rhs.bodySpans {
+            return false
+        }
+        if lhs.imageUrls != rhs.imageUrls {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(referentId)
+        hasher.combine(fragment)
+        hasher.combine(body)
+        hasher.combine(author)
+        hasher.combine(verified)
+        hasher.combine(votes)
+        hasher.combine(shareUrl)
+        hasher.combine(bodySpans)
+        hasher.combine(imageUrls)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusAnnotationRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusAnnotationRecord {
+        return
+            try GeniusAnnotationRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                referentId: FfiConverterInt64.read(from: &buf), 
+                fragment: FfiConverterString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                author: FfiConverterOptionString.read(from: &buf), 
+                verified: FfiConverterBool.read(from: &buf), 
+                votes: FfiConverterInt64.read(from: &buf), 
+                shareUrl: FfiConverterOptionString.read(from: &buf), 
+                bodySpans: FfiConverterSequenceTypeGeniusAnnotationSpanRecord.read(from: &buf), 
+                imageUrls: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusAnnotationRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterInt64.write(value.referentId, into: &buf)
+        FfiConverterString.write(value.fragment, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterOptionString.write(value.author, into: &buf)
+        FfiConverterBool.write(value.verified, into: &buf)
+        FfiConverterInt64.write(value.votes, into: &buf)
+        FfiConverterOptionString.write(value.shareUrl, into: &buf)
+        FfiConverterSequenceTypeGeniusAnnotationSpanRecord.write(value.bodySpans, into: &buf)
+        FfiConverterSequenceString.write(value.imageUrls, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationRecord_lift(_ buf: RustBuffer) throws -> GeniusAnnotationRecord {
+    return try FfiConverterTypeGeniusAnnotationRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationRecord_lower(_ value: GeniusAnnotationRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusAnnotationRecord.lower(value)
+}
+
+
+public struct GeniusAnnotationSpanRecord {
+    public var text: String
+    public var url: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, url: String?) {
+        self.text = text
+        self.url = url
+    }
+}
+
+
+
+extension GeniusAnnotationSpanRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusAnnotationSpanRecord, rhs: GeniusAnnotationSpanRecord) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(url)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusAnnotationSpanRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusAnnotationSpanRecord {
+        return
+            try GeniusAnnotationSpanRecord(
+                text: FfiConverterString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusAnnotationSpanRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationSpanRecord_lift(_ buf: RustBuffer) throws -> GeniusAnnotationSpanRecord {
+    return try FfiConverterTypeGeniusAnnotationSpanRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationSpanRecord_lower(_ value: GeniusAnnotationSpanRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusAnnotationSpanRecord.lower(value)
+}
+
+
+public struct GeniusAnnotationsRecord {
+    public var items: [GeniusAnnotationRecord]
+    public var nextPage: UInt32?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(items: [GeniusAnnotationRecord], nextPage: UInt32?) {
+        self.items = items
+        self.nextPage = nextPage
+    }
+}
+
+
+
+extension GeniusAnnotationsRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusAnnotationsRecord, rhs: GeniusAnnotationsRecord) -> Bool {
+        if lhs.items != rhs.items {
+            return false
+        }
+        if lhs.nextPage != rhs.nextPage {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(items)
+        hasher.combine(nextPage)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusAnnotationsRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusAnnotationsRecord {
+        return
+            try GeniusAnnotationsRecord(
+                items: FfiConverterSequenceTypeGeniusAnnotationRecord.read(from: &buf), 
+                nextPage: FfiConverterOptionUInt32.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusAnnotationsRecord, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeGeniusAnnotationRecord.write(value.items, into: &buf)
+        FfiConverterOptionUInt32.write(value.nextPage, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationsRecord_lift(_ buf: RustBuffer) throws -> GeniusAnnotationsRecord {
+    return try FfiConverterTypeGeniusAnnotationsRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusAnnotationsRecord_lower(_ value: GeniusAnnotationsRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusAnnotationsRecord.lower(value)
+}
+
+
+public struct GeniusCandidateRecord {
+    public var id: Int64
+    public var title: String
+    public var artist: String
+    public var url: String?
+    public var confidence: Double
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, title: String, artist: String, url: String?, confidence: Double) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.url = url
+        self.confidence = confidence
+    }
+}
+
+
+
+extension GeniusCandidateRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusCandidateRecord, rhs: GeniusCandidateRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.confidence != rhs.confidence {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(url)
+        hasher.combine(confidence)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusCandidateRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusCandidateRecord {
+        return
+            try GeniusCandidateRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                artist: FfiConverterString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                confidence: FfiConverterDouble.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusCandidateRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterDouble.write(value.confidence, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusCandidateRecord_lift(_ buf: RustBuffer) throws -> GeniusCandidateRecord {
+    return try FfiConverterTypeGeniusCandidateRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusCandidateRecord_lower(_ value: GeniusCandidateRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusCandidateRecord.lower(value)
+}
+
+
+public struct GeniusLyricLineRecord {
+    public var text: String
+    public var referentId: Int64?
+    public var isHeader: Bool
+    public var spans: [GeniusLyricSpanRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, referentId: Int64?, isHeader: Bool, spans: [GeniusLyricSpanRecord]) {
+        self.text = text
+        self.referentId = referentId
+        self.isHeader = isHeader
+        self.spans = spans
+    }
+}
+
+
+
+extension GeniusLyricLineRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusLyricLineRecord, rhs: GeniusLyricLineRecord) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.referentId != rhs.referentId {
+            return false
+        }
+        if lhs.isHeader != rhs.isHeader {
+            return false
+        }
+        if lhs.spans != rhs.spans {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(referentId)
+        hasher.combine(isHeader)
+        hasher.combine(spans)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusLyricLineRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusLyricLineRecord {
+        return
+            try GeniusLyricLineRecord(
+                text: FfiConverterString.read(from: &buf), 
+                referentId: FfiConverterOptionInt64.read(from: &buf), 
+                isHeader: FfiConverterBool.read(from: &buf), 
+                spans: FfiConverterSequenceTypeGeniusLyricSpanRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusLyricLineRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionInt64.write(value.referentId, into: &buf)
+        FfiConverterBool.write(value.isHeader, into: &buf)
+        FfiConverterSequenceTypeGeniusLyricSpanRecord.write(value.spans, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricLineRecord_lift(_ buf: RustBuffer) throws -> GeniusLyricLineRecord {
+    return try FfiConverterTypeGeniusLyricLineRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricLineRecord_lower(_ value: GeniusLyricLineRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusLyricLineRecord.lower(value)
+}
+
+
+public struct GeniusLyricSpanRecord {
+    public var text: String
+    public var referentId: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(text: String, referentId: Int64?) {
+        self.text = text
+        self.referentId = referentId
+    }
+}
+
+
+
+extension GeniusLyricSpanRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusLyricSpanRecord, rhs: GeniusLyricSpanRecord) -> Bool {
+        if lhs.text != rhs.text {
+            return false
+        }
+        if lhs.referentId != rhs.referentId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(text)
+        hasher.combine(referentId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusLyricSpanRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusLyricSpanRecord {
+        return
+            try GeniusLyricSpanRecord(
+                text: FfiConverterString.read(from: &buf), 
+                referentId: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusLyricSpanRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.text, into: &buf)
+        FfiConverterOptionInt64.write(value.referentId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricSpanRecord_lift(_ buf: RustBuffer) throws -> GeniusLyricSpanRecord {
+    return try FfiConverterTypeGeniusLyricSpanRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricSpanRecord_lower(_ value: GeniusLyricSpanRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusLyricSpanRecord.lower(value)
+}
+
+
+public struct GeniusLyricsRecord {
+    public var lines: [GeniusLyricLineRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(lines: [GeniusLyricLineRecord]) {
+        self.lines = lines
+    }
+}
+
+
+
+extension GeniusLyricsRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusLyricsRecord, rhs: GeniusLyricsRecord) -> Bool {
+        if lhs.lines != rhs.lines {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(lines)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusLyricsRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusLyricsRecord {
+        return
+            try GeniusLyricsRecord(
+                lines: FfiConverterSequenceTypeGeniusLyricLineRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusLyricsRecord, into buf: inout [UInt8]) {
+        FfiConverterSequenceTypeGeniusLyricLineRecord.write(value.lines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricsRecord_lift(_ buf: RustBuffer) throws -> GeniusLyricsRecord {
+    return try FfiConverterTypeGeniusLyricsRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusLyricsRecord_lower(_ value: GeniusLyricsRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusLyricsRecord.lower(value)
+}
+
+
+/**
+ * Session-local aggregate diagnostics. Never contains titles, IDs or lyric text.
+ */
+public struct GeniusMetricsRecord {
+    public var requests: UInt64
+    public var responseHeaderMs: UInt64
+    public var cacheHits: UInt64
+    public var http429: UInt64
+    public var http403: UInt64
+    public var http5xx: UInt64
+    public var transportErrors: UInt64
+    public var parseErrors: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(requests: UInt64, responseHeaderMs: UInt64, cacheHits: UInt64, http429: UInt64, http403: UInt64, http5xx: UInt64, transportErrors: UInt64, parseErrors: UInt64) {
+        self.requests = requests
+        self.responseHeaderMs = responseHeaderMs
+        self.cacheHits = cacheHits
+        self.http429 = http429
+        self.http403 = http403
+        self.http5xx = http5xx
+        self.transportErrors = transportErrors
+        self.parseErrors = parseErrors
+    }
+}
+
+
+
+extension GeniusMetricsRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusMetricsRecord, rhs: GeniusMetricsRecord) -> Bool {
+        if lhs.requests != rhs.requests {
+            return false
+        }
+        if lhs.responseHeaderMs != rhs.responseHeaderMs {
+            return false
+        }
+        if lhs.cacheHits != rhs.cacheHits {
+            return false
+        }
+        if lhs.http429 != rhs.http429 {
+            return false
+        }
+        if lhs.http403 != rhs.http403 {
+            return false
+        }
+        if lhs.http5xx != rhs.http5xx {
+            return false
+        }
+        if lhs.transportErrors != rhs.transportErrors {
+            return false
+        }
+        if lhs.parseErrors != rhs.parseErrors {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(requests)
+        hasher.combine(responseHeaderMs)
+        hasher.combine(cacheHits)
+        hasher.combine(http429)
+        hasher.combine(http403)
+        hasher.combine(http5xx)
+        hasher.combine(transportErrors)
+        hasher.combine(parseErrors)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusMetricsRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusMetricsRecord {
+        return
+            try GeniusMetricsRecord(
+                requests: FfiConverterUInt64.read(from: &buf), 
+                responseHeaderMs: FfiConverterUInt64.read(from: &buf), 
+                cacheHits: FfiConverterUInt64.read(from: &buf), 
+                http429: FfiConverterUInt64.read(from: &buf), 
+                http403: FfiConverterUInt64.read(from: &buf), 
+                http5xx: FfiConverterUInt64.read(from: &buf), 
+                transportErrors: FfiConverterUInt64.read(from: &buf), 
+                parseErrors: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusMetricsRecord, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.requests, into: &buf)
+        FfiConverterUInt64.write(value.responseHeaderMs, into: &buf)
+        FfiConverterUInt64.write(value.cacheHits, into: &buf)
+        FfiConverterUInt64.write(value.http429, into: &buf)
+        FfiConverterUInt64.write(value.http403, into: &buf)
+        FfiConverterUInt64.write(value.http5xx, into: &buf)
+        FfiConverterUInt64.write(value.transportErrors, into: &buf)
+        FfiConverterUInt64.write(value.parseErrors, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusMetricsRecord_lift(_ buf: RustBuffer) throws -> GeniusMetricsRecord {
+    return try FfiConverterTypeGeniusMetricsRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusMetricsRecord_lower(_ value: GeniusMetricsRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusMetricsRecord.lower(value)
+}
+
+
+public struct GeniusPerformanceRecord {
+    public var label: String
+    public var artists: [String]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(label: String, artists: [String]) {
+        self.label = label
+        self.artists = artists
+    }
+}
+
+
+
+extension GeniusPerformanceRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusPerformanceRecord, rhs: GeniusPerformanceRecord) -> Bool {
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.artists != rhs.artists {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(label)
+        hasher.combine(artists)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusPerformanceRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusPerformanceRecord {
+        return
+            try GeniusPerformanceRecord(
+                label: FfiConverterString.read(from: &buf), 
+                artists: FfiConverterSequenceString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusPerformanceRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterSequenceString.write(value.artists, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusPerformanceRecord_lift(_ buf: RustBuffer) throws -> GeniusPerformanceRecord {
+    return try FfiConverterTypeGeniusPerformanceRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusPerformanceRecord_lower(_ value: GeniusPerformanceRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusPerformanceRecord.lower(value)
+}
+
+
+public struct GeniusResolutionRecord {
+    public var status: GeniusMatchStatusRecord
+    public var song: GeniusSongRecord?
+    public var candidates: [GeniusCandidateRecord]
+    public var chosenByUser: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(status: GeniusMatchStatusRecord, song: GeniusSongRecord?, candidates: [GeniusCandidateRecord], chosenByUser: Bool) {
+        self.status = status
+        self.song = song
+        self.candidates = candidates
+        self.chosenByUser = chosenByUser
+    }
+}
+
+
+
+extension GeniusResolutionRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusResolutionRecord, rhs: GeniusResolutionRecord) -> Bool {
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.song != rhs.song {
+            return false
+        }
+        if lhs.candidates != rhs.candidates {
+            return false
+        }
+        if lhs.chosenByUser != rhs.chosenByUser {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(status)
+        hasher.combine(song)
+        hasher.combine(candidates)
+        hasher.combine(chosenByUser)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusResolutionRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusResolutionRecord {
+        return
+            try GeniusResolutionRecord(
+                status: FfiConverterTypeGeniusMatchStatusRecord.read(from: &buf), 
+                song: FfiConverterOptionTypeGeniusSongRecord.read(from: &buf), 
+                candidates: FfiConverterSequenceTypeGeniusCandidateRecord.read(from: &buf), 
+                chosenByUser: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusResolutionRecord, into buf: inout [UInt8]) {
+        FfiConverterTypeGeniusMatchStatusRecord.write(value.status, into: &buf)
+        FfiConverterOptionTypeGeniusSongRecord.write(value.song, into: &buf)
+        FfiConverterSequenceTypeGeniusCandidateRecord.write(value.candidates, into: &buf)
+        FfiConverterBool.write(value.chosenByUser, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusResolutionRecord_lift(_ buf: RustBuffer) throws -> GeniusResolutionRecord {
+    return try FfiConverterTypeGeniusResolutionRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusResolutionRecord_lower(_ value: GeniusResolutionRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusResolutionRecord.lower(value)
+}
+
+
+public struct GeniusSongRecord {
+    public var id: Int64
+    public var title: String
+    public var artist: String
+    public var url: String?
+    public var description: String?
+    public var releaseDate: String?
+    public var annotationCount: UInt64
+    public var producers: [String]
+    public var writers: [String]
+    public var performances: [GeniusPerformanceRecord]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: Int64, title: String, artist: String, url: String?, description: String?, releaseDate: String?, annotationCount: UInt64, producers: [String], writers: [String], performances: [GeniusPerformanceRecord]) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.url = url
+        self.description = description
+        self.releaseDate = releaseDate
+        self.annotationCount = annotationCount
+        self.producers = producers
+        self.writers = writers
+        self.performances = performances
+    }
+}
+
+
+
+extension GeniusSongRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusSongRecord, rhs: GeniusSongRecord) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artist != rhs.artist {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.description != rhs.description {
+            return false
+        }
+        if lhs.releaseDate != rhs.releaseDate {
+            return false
+        }
+        if lhs.annotationCount != rhs.annotationCount {
+            return false
+        }
+        if lhs.producers != rhs.producers {
+            return false
+        }
+        if lhs.writers != rhs.writers {
+            return false
+        }
+        if lhs.performances != rhs.performances {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(artist)
+        hasher.combine(url)
+        hasher.combine(description)
+        hasher.combine(releaseDate)
+        hasher.combine(annotationCount)
+        hasher.combine(producers)
+        hasher.combine(writers)
+        hasher.combine(performances)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusSongRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusSongRecord {
+        return
+            try GeniusSongRecord(
+                id: FfiConverterInt64.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                artist: FfiConverterString.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                description: FfiConverterOptionString.read(from: &buf), 
+                releaseDate: FfiConverterOptionString.read(from: &buf), 
+                annotationCount: FfiConverterUInt64.read(from: &buf), 
+                producers: FfiConverterSequenceString.read(from: &buf), 
+                writers: FfiConverterSequenceString.read(from: &buf), 
+                performances: FfiConverterSequenceTypeGeniusPerformanceRecord.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusSongRecord, into buf: inout [UInt8]) {
+        FfiConverterInt64.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artist, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterOptionString.write(value.description, into: &buf)
+        FfiConverterOptionString.write(value.releaseDate, into: &buf)
+        FfiConverterUInt64.write(value.annotationCount, into: &buf)
+        FfiConverterSequenceString.write(value.producers, into: &buf)
+        FfiConverterSequenceString.write(value.writers, into: &buf)
+        FfiConverterSequenceTypeGeniusPerformanceRecord.write(value.performances, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusSongRecord_lift(_ buf: RustBuffer) throws -> GeniusSongRecord {
+    return try FfiConverterTypeGeniusSongRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusSongRecord_lower(_ value: GeniusSongRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusSongRecord.lower(value)
+}
+
+
+public struct GeniusTrackRecord {
+    public var videoId: String
+    public var title: String
+    public var artists: String
+    public var album: String?
+    public var durationSeconds: UInt64?
+    public var isUpload: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(videoId: String, title: String, artists: String, album: String?, durationSeconds: UInt64?, isUpload: Bool) {
+        self.videoId = videoId
+        self.title = title
+        self.artists = artists
+        self.album = album
+        self.durationSeconds = durationSeconds
+        self.isUpload = isUpload
+    }
+}
+
+
+
+extension GeniusTrackRecord: Equatable, Hashable {
+    public static func ==(lhs: GeniusTrackRecord, rhs: GeniusTrackRecord) -> Bool {
+        if lhs.videoId != rhs.videoId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.artists != rhs.artists {
+            return false
+        }
+        if lhs.album != rhs.album {
+            return false
+        }
+        if lhs.durationSeconds != rhs.durationSeconds {
+            return false
+        }
+        if lhs.isUpload != rhs.isUpload {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(videoId)
+        hasher.combine(title)
+        hasher.combine(artists)
+        hasher.combine(album)
+        hasher.combine(durationSeconds)
+        hasher.combine(isUpload)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusTrackRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusTrackRecord {
+        return
+            try GeniusTrackRecord(
+                videoId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                artists: FfiConverterString.read(from: &buf), 
+                album: FfiConverterOptionString.read(from: &buf), 
+                durationSeconds: FfiConverterOptionUInt64.read(from: &buf), 
+                isUpload: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GeniusTrackRecord, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.videoId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterString.write(value.artists, into: &buf)
+        FfiConverterOptionString.write(value.album, into: &buf)
+        FfiConverterOptionUInt64.write(value.durationSeconds, into: &buf)
+        FfiConverterBool.write(value.isUpload, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusTrackRecord_lift(_ buf: RustBuffer) throws -> GeniusTrackRecord {
+    return try FfiConverterTypeGeniusTrackRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusTrackRecord_lower(_ value: GeniusTrackRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusTrackRecord.lower(value)
 }
 
 
@@ -3780,6 +5037,77 @@ public func FfiConverterTypeStreamPlaybackInfo_lower(_ value: StreamPlaybackInfo
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
+public enum GeniusMatchStatusRecord {
+    
+    case matched
+    case ambiguous
+    case notFound
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGeniusMatchStatusRecord: FfiConverterRustBuffer {
+    typealias SwiftType = GeniusMatchStatusRecord
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GeniusMatchStatusRecord {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .matched
+        
+        case 2: return .ambiguous
+        
+        case 3: return .notFound
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GeniusMatchStatusRecord, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .matched:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .ambiguous:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .notFound:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusMatchStatusRecord_lift(_ buf: RustBuffer) throws -> GeniusMatchStatusRecord {
+    return try FfiConverterTypeGeniusMatchStatusRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGeniusMatchStatusRecord_lower(_ value: GeniusMatchStatusRecord) -> RustBuffer {
+    return FfiConverterTypeGeniusMatchStatusRecord.lower(value)
+}
+
+
+
+extension GeniusMatchStatusRecord: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
 public enum HomeSectionFormatRecord {
     
     case largeCards
@@ -3956,6 +5284,30 @@ extension SideBError: Foundation.LocalizedError {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt32: FfiConverterRustBuffer {
+    typealias SwiftType = UInt32?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt32.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt32.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
     typealias SwiftType = UInt64?
 
@@ -3972,6 +5324,30 @@ fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionInt64: FfiConverterRustBuffer {
+    typealias SwiftType = Int64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterInt64.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -4028,6 +5404,102 @@ fileprivate struct FfiConverterOptionString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGeniusAnnotationsRecord: FfiConverterRustBuffer {
+    typealias SwiftType = GeniusAnnotationsRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGeniusAnnotationsRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGeniusAnnotationsRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGeniusLyricsRecord: FfiConverterRustBuffer {
+    typealias SwiftType = GeniusLyricsRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGeniusLyricsRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGeniusLyricsRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGeniusResolutionRecord: FfiConverterRustBuffer {
+    typealias SwiftType = GeniusResolutionRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGeniusResolutionRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGeniusResolutionRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGeniusSongRecord: FfiConverterRustBuffer {
+    typealias SwiftType = GeniusSongRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGeniusSongRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGeniusSongRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeLibraryToggleRecord: FfiConverterRustBuffer {
     typealias SwiftType = LibraryToggleRecord?
 
@@ -4076,6 +5548,56 @@ fileprivate struct FfiConverterOptionTypeLyricsInfo: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceInt64: FfiConverterRustBuffer {
+    typealias SwiftType = [Int64]
+
+    public static func write(_ value: [Int64], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterInt64.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [Int64] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [Int64]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterInt64.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
+    typealias SwiftType = [String]
+
+    public static func write(_ value: [String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterString.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [String]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterString.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeArtistCarouselRecord: FfiConverterRustBuffer {
     typealias SwiftType = [ArtistCarouselRecord]
 
@@ -4118,6 +5640,156 @@ fileprivate struct FfiConverterSequenceTypeBrowseCardRecord: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeBrowseCardRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusAnnotationRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusAnnotationRecord]
+
+    public static func write(_ value: [GeniusAnnotationRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusAnnotationRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusAnnotationRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusAnnotationRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusAnnotationRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusAnnotationSpanRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusAnnotationSpanRecord]
+
+    public static func write(_ value: [GeniusAnnotationSpanRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusAnnotationSpanRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusAnnotationSpanRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusAnnotationSpanRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusAnnotationSpanRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusCandidateRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusCandidateRecord]
+
+    public static func write(_ value: [GeniusCandidateRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusCandidateRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusCandidateRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusCandidateRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusCandidateRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusLyricLineRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusLyricLineRecord]
+
+    public static func write(_ value: [GeniusLyricLineRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusLyricLineRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusLyricLineRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusLyricLineRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusLyricLineRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusLyricSpanRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusLyricSpanRecord]
+
+    public static func write(_ value: [GeniusLyricSpanRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusLyricSpanRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusLyricSpanRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusLyricSpanRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusLyricSpanRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGeniusPerformanceRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [GeniusPerformanceRecord]
+
+    public static func write(_ value: [GeniusPerformanceRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGeniusPerformanceRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GeniusPerformanceRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GeniusPerformanceRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGeniusPerformanceRecord.read(from: &buf))
         }
         return seq
     }
@@ -4391,6 +6063,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sideb_core_checksum_method_sidebcore_apply_song_library_action() != 10220) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sideb_core_checksum_method_sidebcore_choose_genius() != 51171) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_clear_genius_choice() != 58473) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sideb_core_checksum_method_sidebcore_create_playlist() != 48181) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4416,6 +6094,24 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_get_cookie() != 6201) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_annotations() != 47659) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_cached() != 39948) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_cached_annotations() != 23283) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_cached_lyrics() != 4786) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_lyrics() != 48683) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_genius_metrics() != 2657) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_get_history() != 47312) {
@@ -4508,6 +6204,12 @@ private let initializationResult: InitializationResult = {
     if (uniffi_sideb_core_checksum_method_sidebcore_remove_from_playlist() != 25862) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_sideb_core_checksum_method_sidebcore_report_genius_miss() != 62697) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_resolve_genius() != 14715) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_sideb_core_checksum_method_sidebcore_resolve_stream() != 64233) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -4518,6 +6220,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_search_cards() != 49099) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_search_genius() != 62249) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_search_songs() != 678) {

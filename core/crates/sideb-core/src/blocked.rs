@@ -30,7 +30,10 @@ pub fn list(db: &Db) -> Vec<BlockedArtist> {
 }
 
 fn save(db: &Db, list: &[BlockedArtist]) {
-    db.set_setting(BLOCKED_SETTING, &serde_json::to_string(list).unwrap_or_else(|_| "[]".into()));
+    db.set_setting(
+        BLOCKED_SETTING,
+        &serde_json::to_string(list).unwrap_or_else(|_| "[]".into()),
+    );
 }
 
 pub fn block(db: &Db, entry: BlockedArtist) -> Vec<BlockedArtist> {
@@ -93,7 +96,10 @@ mod tests {
     }
 
     fn entry(id: Option<&str>, name: &str) -> BlockedArtist {
-        BlockedArtist { id: id.map(str::to_owned), name: name.into() }
+        BlockedArtist {
+            id: id.map(str::to_owned),
+            name: name.into(),
+        }
     }
 
     #[test]

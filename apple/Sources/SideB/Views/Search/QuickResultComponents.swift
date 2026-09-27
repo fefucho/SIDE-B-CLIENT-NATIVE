@@ -47,7 +47,7 @@ struct QuickResultCardRow: View {
                     HStack(spacing: 4) {
                         Text(kindDisplayName)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(isHero ? Color.sidebAccent : .secondary)
+                            .foregroundStyle(isHero ? .primary : .secondary)
                         
                         if let sub = card.subtitle, !sub.isEmpty {
                             Text("•")
@@ -186,7 +186,7 @@ struct QuickResultSongRow: View {
                 
                 Image(systemName: "play.fill")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isHovered ? Color.sidebAccent : Color.secondary.opacity(0.5))
+                    .foregroundStyle(isHovered ? Color.primary : Color.secondary.opacity(0.5))
                     .padding(.trailing, 4)
             }
             .padding(.horizontal, 10)

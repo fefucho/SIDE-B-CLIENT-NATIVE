@@ -305,6 +305,17 @@ struct WindowRootView: View {
         .frame(minWidth: 960, minHeight: 640)
         .background(Color.sidebDarkBackground)
         .background(WindowConfigurator(isFullscreenPresented: playerViewModel.isFullscreenPresented))
+        .background(
+            WindowNavigationGestureBridge(
+                router: router,
+                canNavigate: {
+                    !playerViewModel.isFullscreenPresented &&
+                    !isSpotlightPresented &&
+                    !showLoginSheet &&
+                    !isCreatePlaylistPresented
+                }
+            )
+        )
         .environment(\.sideBMenuContext, menuContext)
         .focusedSceneValue(\.sideBMenuContext, menuContext)
         .onAppear {
@@ -338,7 +349,7 @@ struct WindowRootView: View {
             playerViewModel.flushPlaybackState()
         }
         .preferredColorScheme(.dark)
-        .tint(Color.sidebAccent)
+        .tint(.white)
         .overlay(alignment: .topLeading) {
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {

@@ -65,17 +65,17 @@ public struct UpdateModalSheet: View {
                 .foregroundStyle(.secondary)
             Text(version)
                 .font(.caption.bold())
-                .foregroundStyle(isCurrent ? .primary : Color.sidebAccent)
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isCurrent ? Color.sidebCardBackground : Color.sidebAccent.opacity(0.12))
+                .fill(isCurrent ? Color.sidebCardBackground : Color.white.opacity(0.12))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .stroke(isCurrent ? Color.sidebCardBorder : Color.sidebAccent.opacity(0.3), lineWidth: 0.5)
+                .stroke(isCurrent ? Color.sidebCardBorder : Color.white.opacity(0.3), lineWidth: 0.5)
         )
     }
 
@@ -109,7 +109,7 @@ public struct UpdateModalSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Image(systemName: "sparkles")
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     Text("Novedades y correcciones (Fix Report):")
                         .font(.callout.bold())
                 }
@@ -138,11 +138,11 @@ public struct UpdateModalSheet: View {
                     Spacer()
                     Text("\(Int(progress * 100))%")
                         .font(.callout.monospacedDigit().bold())
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                 }
 
                 ProgressView(value: progress)
-                    .tint(Color.sidebAccent)
+                    .tint(.white)
 
                 Text("Descargando paquete optimizado para Apple Silicon directamente de GitHub Releases.")
                     .font(.caption)
@@ -229,7 +229,7 @@ public struct UpdateModalSheet: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color.sidebAccent)
+                .tint(.white)
                 .keyboardShortcut(.defaultAction)
 
             case .downloading:
@@ -268,7 +268,7 @@ public struct UpdateModalSheet: View {
     private var iconColor: Color {
         switch updateService.state {
         case .idle, .checking, .available, .downloading, .installing:
-            return Color.sidebAccent
+            return .white
         case .upToDate:
             return .green
         case .failed:

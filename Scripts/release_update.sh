@@ -42,11 +42,13 @@ case "$INCREMENT_TYPE" in
         PATCH=$((PATCH + 1))
         ;;
     *)
-        # Si se pasó un número de versión directo (ej: 1.2.3)
-        if [[ "$INCREMENT_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        # Si se pasó un número de versión directo (ej: 1.1 o 1.2.3)
+        if [[ "$INCREMENT_TYPE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            NEW_VERSION="${INCREMENT_TYPE}.0"
+        elif [[ "$INCREMENT_TYPE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             NEW_VERSION="$INCREMENT_TYPE"
         else
-            echo "❌ Tipo de incremento no válido: $INCREMENT_TYPE (usa patch, minor, major o x.y.z)"
+            echo "❌ Tipo de incremento no válido: $INCREMENT_TYPE (usa patch, minor, major, x.y o x.y.z)"
             exit 1
         fi
         ;;

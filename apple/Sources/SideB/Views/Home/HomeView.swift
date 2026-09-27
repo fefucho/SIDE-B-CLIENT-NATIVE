@@ -31,6 +31,8 @@ struct HomeView: View {
                     hasMore: homeViewModel.continuationToken != nil,
                     isLoadingMore: homeViewModel.isLoadingMore,
                     currentTrackID: playerViewModel.currentTrack?.videoId,
+                    currentAlbumBrowseId: playerViewModel.currentAlbumBrowseId,
+                    currentPlaylistBrowseId: playerViewModel.currentPlaylistBrowseId,
                     isPlaying: playerViewModel.isPlaying,
                     player: playerViewModel,
                     router: router,
@@ -89,7 +91,7 @@ struct HomeView: View {
         .foregroundStyle(selected ? Color.white : Color.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(selected ? Color.sidebAccent.opacity(0.82) : Color.primary.opacity(0.07), in: Capsule())
+        .background(selected ? Color.white.opacity(0.16) : Color.primary.opacity(0.07), in: Capsule())
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
@@ -111,7 +113,7 @@ struct HomeView: View {
                     } label: {
                         Text("Reintentar")
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color.sidebAccent)
+                            .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                 } else if homeViewModel.isShowingSavedFeed {

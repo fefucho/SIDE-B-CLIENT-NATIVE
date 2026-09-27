@@ -12,8 +12,8 @@ struct AirPlayRoutePickerView: NSViewRepresentable {
         picker.isRoutePickerButtonBordered = false
         picker.setRoutePickerButtonColor(NSColor.white.withAlphaComponent(0.70), for: .normal)
         picker.setRoutePickerButtonColor(NSColor.white, for: .normalHighlighted)
-        picker.setRoutePickerButtonColor(NSColor.sidebAccent, for: .active)
-        picker.setRoutePickerButtonColor(NSColor.sidebAccent, for: .activeHighlighted)
+        picker.setRoutePickerButtonColor(.white, for: .active)
+        picker.setRoutePickerButtonColor(.white, for: .activeHighlighted)
         picker.player = AudioPlayerService.shared.avPlayer
         return picker
     }

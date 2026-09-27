@@ -3,6 +3,7 @@ uniffi::setup_scaffolding!();
 pub mod blocked;
 pub mod cipher;
 pub mod db;
+pub mod genius;
 // pub mod discord;
 pub mod http;
 // pub mod lastfm;
@@ -16,6 +17,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+pub use genius::{
+    GeniusAnnotationRecord, GeniusAnnotationsRecord, GeniusCandidateRecord, GeniusLyricLineRecord,
+    GeniusLyricsRecord, GeniusMatchStatusRecord, GeniusMetricsRecord, GeniusPerformanceRecord,
+    GeniusResolutionRecord, GeniusSongRecord, GeniusTrackRecord,
+};
 use innertube::{AudioQuality, Clients, InnerTube, PlaylistSort, METADATA_CLIENT};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -338,6 +344,7 @@ pub struct SideBCore {
     potoken: Arc<potoken::PoTokenGenerator>,
     cipher: Arc<cipher::CipherDeobfuscator>,
     current_playback: Arc<Mutex<Option<CorePlaybackTracking>>>,
+    genius: Arc<genius::GeniusEngine>,
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -386,6 +393,7 @@ impl SideBCore {
 
         Ok(Arc::new(SideBCore {
             data_dir: path,
+            genius: Arc::new(genius::GeniusEngine::new(db.clone())),
             db,
             it,
             clients,
@@ -1588,6 +1596,84 @@ impl SideBCore {
                 })
                 .collect(),
         }))
+    }
+
+    /// Read-only cache probe used before the delayed background network lookup.
+    pub async fn get_genius_cached(
+        &self,
+        track: GeniusTrackRecord,
+    ) -> Option<GeniusResolutionRecord> {
+        self.genius.cached(&track)
+    }
+
+    pub async fn resolve_genius(
+        &self,
+        track: GeniusTrackRecord,
+        force: bool,
+    ) -> Result<GeniusResolutionRecord, SideBError> {
+        self.genius.resolve(track, force).await
+    }
+
+    pub async fn search_genius(
+        &self,
+        query: String,
+    ) -> Result<Vec<GeniusCandidateRecord>, SideBError> {
+        self.genius.search_manual(query).await
+    }
+
+    pub async fn choose_genius(
+        &self,
+        track: GeniusTrackRecord,
+        song_id: i64,
+    ) -> Result<GeniusResolutionRecord, SideBError> {
+        self.genius.choose(track, song_id).await
+    }
+
+    pub fn clear_genius_choice(&self, track: GeniusTrackRecord) {
+        self.genius.clear_choice(&track);
+    }
+
+    pub fn report_genius_miss(
+        &self,
+        track: GeniusTrackRecord,
+        status: GeniusMatchStatusRecord,
+        candidate_ids: Vec<i64>,
+    ) -> Result<(), SideBError> {
+        self.genius.report_miss(&track, status, candidate_ids)
+    }
+
+    pub async fn get_genius_annotations(
+        &self,
+        song_id: i64,
+        page: u32,
+        force: bool,
+    ) -> Result<GeniusAnnotationsRecord, SideBError> {
+        self.genius.annotations(song_id, page, force).await
+    }
+
+    pub async fn get_genius_cached_annotations(
+        &self,
+        song_id: i64,
+        page: u32,
+    ) -> Option<GeniusAnnotationsRecord> {
+        self.genius.cached_annotations(song_id, page)
+    }
+
+    pub async fn get_genius_lyrics(
+        &self,
+        song_id: i64,
+        song_url: String,
+        force: bool,
+    ) -> Result<GeniusLyricsRecord, SideBError> {
+        self.genius.lyrics(song_id, song_url, force).await
+    }
+
+    pub async fn get_genius_cached_lyrics(&self, song_id: i64) -> Option<GeniusLyricsRecord> {
+        self.genius.cached_lyrics(song_id)
+    }
+
+    pub fn get_genius_metrics(&self) -> GeniusMetricsRecord {
+        self.genius.metrics()
     }
 
     /// Read or write settings in local SQLite database.

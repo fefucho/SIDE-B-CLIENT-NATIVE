@@ -99,7 +99,7 @@ struct PlayerBarView: View {
 
                 // Rail transcurrido (Acento Side B calibrado)
                 Capsule()
-                    .fill(Color.sidebAccent)
+                    .fill(Color.white)
                     .frame(width: max(0, fillWidth), height: isHoveringScrubber ? 3.5 : 2.5)
 
                 // Cabezal Playhead Vertical (píldora vertical de precisión)
@@ -142,7 +142,7 @@ struct PlayerBarView: View {
             } label: {
                 Image(systemName: "shuffle")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(viewModel.queueManager.isShuffle ? Color.sidebAccent : Color.white.opacity(0.60))
+                    .foregroundStyle(viewModel.queueManager.isShuffle ? Color.white : Color.white.opacity(0.60))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -217,7 +217,7 @@ struct PlayerBarView: View {
             } label: {
                 Image(systemName: "repeat")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(viewModel.queueManager.isRepeat ? Color.sidebAccent : Color.white.opacity(0.60))
+                    .foregroundStyle(viewModel.queueManager.isRepeat ? Color.white : Color.white.opacity(0.60))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -347,15 +347,12 @@ struct PlayerBarView: View {
                 Menu {
                     SongMenuItems(song: track, player: viewModel, router: router, core: viewModel.rustCore, origin: .nowPlaying)
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.white.opacity(0.65))
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                    SideBEllipsisLabel()
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .frame(width: 26, height: 26)
+                .accessibilityLabel("Más opciones")
+                .frame(width: 28, height: 28)
             }
         }
     }
@@ -366,7 +363,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: viewModel.isCurrentTrackLiked ? "heart.fill" : "heart")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.sidebAccent : Color.white.opacity(0.60))
+                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.white : Color.white.opacity(0.60))
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -382,6 +379,10 @@ struct PlayerBarView: View {
         return HStack(spacing: 8) {
             // (a) Shortcut a Letras Sincronizadas
             lyricsShortcutButton
+                .opacity(isVolumeExpanded ? 0 : 1)
+                .allowsHitTesting(!isVolumeExpanded)
+
+            geniusLyricsShortcutButton
                 .opacity(isVolumeExpanded ? 0 : 1)
                 .allowsHitTesting(!isVolumeExpanded)
 
@@ -406,16 +407,33 @@ struct PlayerBarView: View {
     // MARK: - Atajos a Paneles
     private var lyricsShortcutButton: some View {
         Button {
-            viewModel.toggleFullscreenPanel(.lyrics)
+            viewModel.toggleLyricsPanel(genius: false)
         } label: {
-            Image(systemName: (viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics) ? "quote.bubble.fill" : "quote.bubble")
+            Image(systemName: (viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && !viewModel.isShowingGeniusLyrics) ? "quote.bubble.fill" : "quote.bubble")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics) ? Color.sidebAccent : Color.white.opacity(0.70))
+                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && !viewModel.isShowingGeniusLyrics) ? Color.white : Color.white.opacity(0.70))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("Letras sincronizadas")
+    }
+
+    private var geniusLyricsShortcutButton: some View {
+        let active = viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && viewModel.isShowingGeniusLyrics
+        return Button {
+            viewModel.toggleLyricsPanel(genius: true)
+        } label: {
+            Image(systemName: active ? "text.book.closed.fill" : "text.book.closed")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(active ? Color.white : Color.white.opacity(0.70))
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.currentTrack == nil)
+        .help("Letras y anotaciones de Genius")
+        .accessibilityLabel("Letras y anotaciones de Genius")
     }
 
     private var queueShortcutButton: some View {
@@ -424,7 +442,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: (viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? "list.bullet.indent" : "list.bullet")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? Color.sidebAccent : Color.white.opacity(0.70))
+                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? Color.white : Color.white.opacity(0.70))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
@@ -558,7 +576,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: "chevron.up")
                 .font(.system(size: 16.5, weight: .bold))
-                .foregroundStyle(viewModel.isFullscreenPresented ? Color.sidebAccent : Color.white.opacity(0.75))
+                .foregroundStyle(viewModel.isFullscreenPresented ? Color.white : Color.white.opacity(0.75))
                 .rotationEffect(.degrees(viewModel.isFullscreenPresented ? 180 : 0))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())

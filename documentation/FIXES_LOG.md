@@ -2440,3 +2440,193 @@
   - Pruebas unitarias en Rust: 63/63 pasadas (`cargo test -p sideb-core`).
   - Pruebas unitarias en Swift: 59/59 pasadas en 4 suites (`swift test`).
 
+---
+
+### [FEAT-067] - Animación de ecualizador CoreAnimation a pantalla completa sobre portada y botón de reproducción directa sin abrir álbumes/playlists
+
+- **Fecha**: 2026-09-26 17:55 (GMT-3)
+- **Agente / Rol**: UI/UX & Platform Lead (Swift/macOS)
+- **Componente**: `HomeItemView` | `HomeEqualizerOverlayView` | `HomeFeedTableView` | `HomeFeedCollectionView` | `HomeView`
+- **Problema / Requerimiento**:
+  - El indicador de reproducción en las tarjetas de Inicio consistía únicamente en un pequeño ícono estático de SF Symbol `waveform` en la esquina inferior derecha. Se solicitó una animación mucho más notoria que abarque el tamaño completo de la imagen con barras de ecualizador en movimiento dinámico que acompañen la música, sin consumir recursos de CPU.
+  - Al hacer hover en las tarjetas de álbumes y playlists en Inicio se mostraba el ícono de play, pero hacer clic sobre él navegaba y abría la página de detalle en lugar de iniciar la música inmediatamente.
+  - Se requería un botón de reproducción directa sobre el ícono de play (área táctil ampliada de 44x44 pt) para reproducir el álbum o playlist sin abrirlo, manteniendo la animación de ecualizador activa sobre la portada durante toda la reproducción y alternando play/pause sin degradar el rendimiento a 120 FPS.
+- **Solución Aplicada**:
+  1. **Superposición de ecualizador CoreAnimation (`HomeEqualizerOverlayView`)**:
+     - Vista nativa `NSView` acelerada por GPU mediante CoreAnimation (`CALayer` / `CAKeyframeAnimation`), con 0% de uso de CPU en reproducción continua.
+     - Scrim translúcido oscuro (`rgba(0, 0, 0, 0.38)`) que respeta el radio de curvatura de la carátula y resalta un ecualizador de barras redondeadas animadas asimétricamente simulando la música.
+     - Detección de estados: activa y reproduciendo (animación en marcha), activa y pausada (congelada sin desaparecer), o inactiva (oculta con recursos liberados). `hitTest` retorna `nil` para no interferir con clics.
+  2. **Botón interactivo de play directo (`HomePlayHitButton`)**:
+     - Botón transparente de 44x44 pt ubicado sobre el símbolo de play en la esquina inferior derecha con cursor `.pointingHand`.
+     - Clic directo lanza la reproducción del álbum/playlist sin abrirlo vía `core.getAlbum(...)` / `core.getPlaylist(...)`, o alterna `togglePlayPause()` si ya está sonando.
+     - Clics en el resto de la tarjeta (título o carátula fuera del botón) continúan navegando a la vista de detalle como siempre.
+  3. **Propagación y sincronización de estado de reproducción**:
+     - `HomeFeedTableView`, `HomeShelfRowView` y `HomeItemView` sincronizan `currentAlbumBrowseId` y `currentPlaylistBrowseId` (con normalización canónica de IDs de playlists y álbumes).
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Views/Home/HomeEqualizerOverlayView.swift` [NUEVO]
+  - `apple/Sources/SideB/Views/Home/HomeFeedCollectionView.swift`
+  - `apple/Sources/SideB/Views/Home/HomeFeedTableView.swift`
+  - `apple/Sources/SideB/Views/Home/HomeView.swift`
+  - `apple/Tests/SideBTests/HomeViewModelTests.swift`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**:
+  - `swift test --package-path apple` aprobó 61 pruebas en 4 suites (incluyendo nueva prueba unitaria especializada `testHomeItemViewEqualizerOverlayAndDirectPlay`).
+
+---
+
+### [FEAT-068] - Navegación nativa con trackpad (gestos de dos dedos) y botones laterales del mouse (PLAN-011)
+
+- **Fecha**: 2026-09-26 18:15 (GMT-3)
+- **Agente / Rol**: UI/UX & Platform Lead (Swift/AppKit/macOS)
+- **Componente**: `WindowNavigationCoordinator` | `WindowNavigationGestureBridge` | `NavigationRouter` | `WindowRootView`
+- **Problema / Requerimiento**:
+  - No existía soporte nativo para navegar Atrás y Adelante mediante el gesto horizontal de dos dedos en el trackpad ni con los botones laterales del mouse (botones 3 y 4), requiriendo interactuar con la cápsula flotante o pulsar atajos de teclado `⌘[` / `⌘]`.
+  - Al realizar un gesto horizontal sobre un estante (shelf de Home), chips o carruseles de artista, el gesto debe desplazar el contenido mientras queden elementos por mostrar; solo al llegar al extremo y superar un umbral deliberado debe navegar.
+  - La navegación por gesto debe ocurrir como máximo una vez por secuencia física, rechazar la inercia (`momentumPhase`), evitar que desplazamientos verticales dominantes naveguen, suprimir atajos duplicados de drivers de mouse, aislarse estrictamente por ventana y deshabilitarse en modales o fullscreen.
+- **Solución Aplicada**:
+  1. **Coordinador AppKit por Ventana (`WindowNavigationCoordinator`)**:
+     - Monitor local de proceso con `NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel, .otherMouseUp, .keyDown])` instalado y liberado limpiamente con el ciclo de vida de la vista (`WindowNavigationGestureBridge`).
+     - Aislamiento estricto por ventana: los eventos se descartan si pertenecen a otra ventana de la aplicación.
+     - Respeto del ajuste de macOS: `NSEvent.isSwipeTrackingFromScrollEventsEnabled`. Si el usuario desactiva "Deslizar entre páginas" en Ajustes del Sistema, no se activa la navegación por trackpad.
+  2. **Detección Dinámica de Extremos en `NSScrollView`**:
+     - Función `findHorizontalScrollView` que inspecciona el árbol de vistas bajo el puntero identificando scroll views horizontales (`NSCollectionView` o SwiftUI `ScrollView`).
+     - `canScrollInDirection`: mientras el scrollview pueda desplazarse en la dirección solicitada (distancia al borde > tolerancia de 2.0 pt), el evento se entrega intacto al scroll normal.
+     - Solo al alcanzar el extremo se acumula el desplazamiento adicional past-boundary.
+  3. **Indicador Visual Interactivo y Cancelación en Tiempo Real**:
+     - Nuevo componente `NavigationGestureIndicatorView`: burbuja Liquid Glass emergente desde el borde izquierdo (Atrás) o derecho (Adelante) que sigue la progresión física del dedo en tiempo real.
+     - **Cancelación interactiva**: Si el usuario suelta los dedos antes de superar el umbral deliberado (65.0 pt) o invierte el movimiento empujando hacia el borde, el indicador se repliega suavemente y la navegación NO se ejecuta.
+     - **Feedback háptico**: Invocación de `NSHapticFeedbackManager.defaultPerformer.perform(.alignment)` cuando el arrastre alcanza el estado confirmado (la burbuja se torna color acento `Color.sidebAccent` y vibra con un clic táctil nativo).
+     - La navegación solo se ejecuta al levantar los dedos (`phase == .ended`) en estado confirmado.
+  4. **Soporte Fiable en Listas Verticales sin Tirones**:
+     - Al detectar un gesto horizontal sobre listas verticales (`HomeFeedTableView`, `AlbumDetailView`, `PlaylistDetailView`, `NativeTrackTableView`, `HistoryView`), el coordinador se engancha a partir de 10.0 pt y consume los eventos (`return nil`), impidiendo que el contenedor vertical se desplace o cancele el gesto con ruido vertical residual.
+  5. **Botones Laterales y Supresión de Duplicados**:
+     - Captura de botones laterales estándar 3 (Atrás) y 4 (Adelante) en `otherMouseUp` con consumo del evento (`return nil`), preservando clic central (botón 2) y demás botones.
+     - Supresión inteligente de eventos `keyDown` `⌘[` / `⌘]` duplicados sintetizados por controladores de mouse dentro de la ventana de debounce (0.25s).
+  6. **Guardias de Modales y Fullscreen**:
+     - Inactivación instantánea si `playerViewModel.isFullscreenPresented`, `isSpotlightPresented`, `window.attachedSheet != nil` o `NSApp.modalWindow != nil`.
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Services/Navigation/NavigationInputCoordinator.swift`
+  - `apple/Sources/SideB/Views/Components/NavigationGestureIndicatorView.swift` [NUEVO]
+  - `apple/Sources/SideB/SideBApp.swift`
+  - `apple/Tests/SideBTests/NavigationGestureTests.swift`
+  - `documentation/plans/PLAN-011-gestos-navegacion.md`
+  - `documentation/plans/README.md`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**:
+  - `swift test --package-path apple` aprobó 68 pruebas en 5 suites (incluyendo las 7 pruebas unitarias de `NavigationGestureTests`).
+
+
+### [FEAT-069] - Integración de información de Genius en reproducción (PLAN-012)
+
+- **Fecha**: 2026-09-26 22:20 (GMT-3)
+- **Agente / Rol**: Core Rust y shell Swift/macOS
+- **Componente**: `Genius` | `SQLite` | `UniFFI` | `FullscreenNowPlayingView`
+- **Problema / Causa Raíz**: Side B v2 carecía de contexto de Genius. Side B old mezclaba fallos de red y ausencia, aceptaba coincidencias dudosas y acoplaba extracción HTML, caché y UI al actor principal.
+- **Solución Aplicada**: Servicio Rust aislado con coincidencia conservadora, candidatos y elección persistente por metadatos; detalle, anotaciones y letras DOM en records UniFFI separados; caché SQLite con TTL y límites; consultas serializadas y espaciadas, reintentos y pausa tras 403; publicación Swift por identidad de reproducción y panel funcional separado de las letras sincronizadas. La carga automática es una opción desactivada por defecto hasta validar corpus y rendimiento. Métricas agregadas de sesión sin títulos ni letras.
+- **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `db.rs`, `lib.rs`, `Cargo.toml`, `core/Cargo.lock`, bindings generados de `apple/SideBCore`, `apple/Sources/SideB/ViewModels/GeniusViewModel.swift`, `PlayerViewModel.swift`, `apple/Sources/SideB/Views/Fullscreen/GeniusPanelView.swift`, `FullscreenNowPlayingView.swift`, `documentation/plans/PLAN-012-genius-v2.md` y su índice.
+- **Verificación**: `cargo test -p sideb-core`: 70 pasadas, 3 ignoradas. `swift test --package-path apple`: 61 pasadas. El endpoint público de búsqueda devolvió HTTP 403 desde este Mac; corpus real de 100 pistas, prueba Release de p95/hitches y permiso de distribución quedan como puertas de aceptación en PLAN-012.
+
+### [FIX-070] - Recuperación de canciones con metadatos de video y colaboración en Genius
+
+- **Fecha**: 2026-09-26 23:27 (GMT-3)
+- **Agente / Rol**: Core Rust
+- **Componente**: `Genius` / resolución de pistas
+- **Problema / Causa Raíz**: `Runaway (feat. Pusha T)` quedaba ambiguo y `Levitating [Explicit]` se guardaba como ausencia porque esas etiquetas permanecían en la consulta de respaldo y en la puntuación. Los marcadores de grabación como `Live` sí deben conservarse para evitar atribuciones erróneas.
+- **Solución Aplicada**: La limpieza de consulta y puntuación retira etiquetas de colaboración y de contenido explícito, manteniendo los marcadores de versión. Se añadieron pruebas unitarias y sondas en vivo ignoradas por defecto para verificar resolución, contexto, anotaciones, letras, enlaces entre líneas y anotaciones, y reutilización de caché.
+- **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `documentation/plans/PLAN-012-genius-v2.md`, `documentation/FIXES_LOG.md`.
+- **Verificación**: Matriz en vivo de ocho pistas: seis coincidencias automáticas y dos versiones ambiguas. Prueba completa: historia y créditos, 7 anotaciones, 64 líneas, 11 líneas con anotaciones enlazadas; repetición con cero solicitudes. Las respuestas de Genius variaron entre HTTP 403 y 200 en esta sesión.
+
+### [FIX-071] - Excluir cabecera de Genius de las letras extraídas
+
+- **Fecha**: 2026-09-26 23:34 (GMT-3)
+- **Agente / Rol**: Core Rust y validación en app macOS
+- **Componente**: `Genius` / extractor de letras
+- **Problema / Causa Raíz**: En la app, la primera línea de «Thinkin Bout You» contenía contadores de colaboradores, enlaces de traducción, título e introducción antes de la primera estrofa. Genius incluye esa cabecera en un subárbol del mismo `data-lyrics-container` que marca `data-exclude-from-selection="true"`; el recorrido DOM anterior leía sus nodos de texto.
+- **Solución Aplicada**: El extractor omite ese subárbol completo y conserva las líneas, encabezados y enlaces de anotación del resto del contenedor.
+- **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `documentation/FIXES_LOG.md`, `documentation/plans/PLAN-012-genius-v2.md`.
+- **Verificación**: Fixture con cabecera excluida y prueba ignorada por defecto contra el HTML real de Genius. Ambas pasan y la primera línea extraída es el encabezado de estrofa. Validación visual en app pendiente del binario actualizado.
+
+### [FIX-072] - La búsqueda automática de Genius continuaba cargando tras saltar de pista
+
+- **Fecha**: 2026-09-26 23:40 (GMT-3)
+- **Agente / Rol**: Swift/macOS y validación en app
+- **Componente**: `GeniusViewModel` / ciclo de vida de consultas por pista
+- **Problema / Causa Raíz**: Al cambiar de canción, `reset()` cancelaba la tarea de resolución pero conservaba su referencia. Si el panel Genius seguía abierto, `ensureNow()` encontraba `lookupTask != nil`, no iniciaba otra consulta y marcaba la apertura como adelantada. Después, `playbackStarted()` omitía la búsqueda automática. La nueva pista quedaba indefinidamente en «cargando» hasta pulsar «Actualizar».
+- **Solución Aplicada**: El reinicio y la limpieza de elección cancelan y liberan todas las referencias a tareas. `ensureNow()` solo marca la apertura adelantada al iniciar una resolución o una carga de contenido, y recupera por separado anotaciones o letras faltantes.
+- **Archivos Modificados**: `apple/Sources/SideB/ViewModels/GeniusViewModel.swift`, `documentation/FIXES_LOG.md`, `documentation/plans/PLAN-012-genius-v2.md`.
+- **Verificación**: `swift test --package-path apple`: 61 pruebas pasan. Build Release y apertura de la app completados. En la app, con búsqueda automática activa y panel Genius abierto, se saltó de «Pink + White» a «gloria»: la segunda pista mostró su coincidencia y letras sin tocar «Actualizar». Otro avance mostró correctamente el estado ambiguo de «L.E.S.».
+
+### [FIX-073] - Resaltado interactivo de anotaciones en letras de Genius y pulido visual de tarjeta
+
+- **Fecha**: 2026-09-27 01:05 (GMT-3)
+- **Agente / Rol**: Swift / AppKit / macOS
+- **Componente**: `FullscreenNowPlayingView` | `GeniusPanelView` | `GeniusLyricsTextView`
+- **Problema / Causa Raíz**:
+  1. En las letras de Genius, las anotaciones tenían un fondo rojo uniforme continuo (`Color.sidebAccent.opacity(0.28)`), lo que volvía imposible distinguir visualmente los límites exactos de una anotación o separar anotaciones adyacentes. Además, la vista de texto no soportaba hover ni retroalimentación visual al pasar el cursor o al mantener una anotación abierta.
+  2. En el reverso de la carátula ("La historia"), el reborde (`strokeBorder`) rompía la estética con la carátula frontal, el encabezado en rojo llamativo "La historia" no se sentía integrado, y el estado sin coincidencia dejaba un recuadro oscuro sin identidad de canción.
+- **Solución Aplicada**:
+  1. **Motor de texto nativo con resaltado interactivo**: Se implementó `GeniusLyricsTextView` (un `NSViewRepresentable` de alto rendimiento con `NSTextView` sobre `NSScrollView`):
+     - **Estado reposo**: Fondo suave y elegante (`Color.sidebAccent.opacity(0.12)`) sin subrayado, permitiendo una lectura limpia sin manchas invasivas de color.
+     - **Estado hover (cursor encima)**: Detección en tiempo real mediante `NSTrackingArea` y mapeo por `referentId`. Al pasar el mouse, **únicamente la anotación correspondiente** se ilumina en un rojo vivo (`opacity(0.38)`) con cursor de mano interactiva (`.pointingHand`), delimitando con absoluta claridad el inicio y fin de la anotación a lo largo de una o múltiples líneas.
+     - **Estado seleccionado (popover activo)**: Al hacer clic, la anotación seleccionada permanece firmemente marcada en rojo notorio (`opacity(0.48)`) mientras el popover esté abierto, volviendo al reposo al cerrarse.
+     - **Popup sin redundancias**: Se eliminó la repetición del fragmento de la letra (`annotation.fragment`) dentro del popover; ahora va directo a la explicación de la nota con una cabecera limpia (`Anotación verificada` o autor).
+  2. **Pulido de tarjeta de información**:
+     - Se eliminó el `strokeBorder` para que la tarjeta trasera tenga bordes limpios idénticos a la portada frontal.
+     - Se reemplazó "La historia" por "Información".
+     - Se garantiza la visualización del título y artista de la pista actual en reproducción en todo momento.
+- **Archivos Modificados**:
+  - `apple/Sources/SideB/Views/Fullscreen/GeniusPanelView.swift`
+  - `apple/Sources/SideB/Views/Fullscreen/FullscreenNowPlayingView.swift`
+  - `apple/Sources/SideB/ViewModels/GeniusViewModel.swift`
+  - `documentation/FIXES_LOG.md`
+- **Verificación**: `swift test --package-path apple` aprobó las 61 pruebas unitarias. Compilación en Release exitosa y app ejecutándose con el nuevo motor de letras y tarjeta sin bordes.
+
+### [FIX-074] - Coincidencias de Genius con iniciales, colaboraciones y alias duplicado
+
+- **Fecha**: 2026-09-27
+- **Agente / Rol**: Core Rust / evaluación de coincidencias
+- **Componente**: `Genius` / búsqueda y resolución
+- **Problema / Causa Raíz**: El resultado de búsqueda conservaba solo el artista principal, `L.E.S.` y `Les` quedaban distintos, y `Kanye West & Ye` no generaba una consulta de respaldo con el artista principal. Los títulos cortos podían mostrar pistas ajenas y dos fichas con el mismo título/artista principal podían confundirse si diferían en colaboraciones.
+- **Solución Aplicada**: Se aprovechan los créditos completos ya presentes en la respuesta de búsqueda, se equiparan iniciales punteadas con nombres compactos, se reconoce el alias redundante de Kanye, se conserva ambigüedad entre fichas duplicadas y se exige equivalencia de título en nombres de hasta tres caracteres. Se puntúan hasta 30 candidatos únicos antes de elegir los diez principales y se versiona la caché de coincidencias para reevaluar resultados previos sin borrar elecciones manuales.
+- **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `documentation/audits/2026-09-27-genius-reported-misses.md`, `documentation/FIXES_LOG.md`.
+- **Verificación**: 11 pruebas locales de Genius aprobadas, incluidas regresiones para seis coincidencias reportadas, `OFF` y las dos fichas de `I CAN’T WAIT`; 4 pruebas en vivo permanecen ignoradas. XCFramework recompilado y `swift test --package-path apple`: 61 pruebas aprobadas. Genius devolvió HTTP 403 en la última comprobación, por lo que falta repetir las ocho reproducciones reales.
+
+### [FIX-075] - Presentación limpia de letras Genius con diagnóstico opcional
+
+- **Fecha**: 2026-09-27
+- **Agente / Rol**: SwiftUI / macOS
+- **Componente**: `GeniusPanelView`
+- **Problema / Causa Raíz**: El panel de lectura siempre mostraba una segunda cabecera, un ajuste de búsqueda automática, botones de corrección y actualización, y un selector de secciones por encima de las letras. Esto ocupaba espacio y parecía una interfaz de diagnóstico.
+- **Solución Aplicada**: La vista habitual abre directamente en las letras y conserva solo un menú de opciones. El menú permite consultar información, ver todas las anotaciones, corregir coincidencia, actualizar, abrir Genius y cambiar la búsqueda automática. «Mostrar controles de diagnóstico» restaura el selector y ajuste visibles cuando se necesiten. Abrir «Cambiar coincidencia» ya no elimina la elección guardada antes de seleccionar otra. Se retiró además el selector redundante entre letras sincronizadas y Genius del panel fullscreen: los dos botones de la barra de reproducción ya realizan esa función. El menú ⋯ flota junto al inicio de las letras y no reserva altura en el layout.
+- **Archivos Modificados**: `apple/Sources/SideB/Views/Fullscreen/GeniusPanelView.swift`, `apple/Sources/SideB/Views/Fullscreen/FullscreenNowPlayingView.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `swift test --package-path apple`: 63 pruebas aprobadas. Build Release empaquetada y abierta; inspección visual confirmó letras a toda altura, menú alineado con la primera línea y ausencia de los selectores redundantes. El menú mostró todas las acciones previstas en accesibilidad.
+
+### [FIX-076] - Registro local de canciones no identificadas y cursor estable en letras Genius
+
+- **Fecha**: 2026-09-27
+- **Agente / Rol**: Core Rust, UniFFI y SwiftUI/AppKit
+- **Componente**: `GeniusPanelView`, `GeniusViewModel`, `GeniusLyricsNSTextView`, caché SQLite
+- **Problema / Causa Raíz**: En estados ambiguos o sin resultado, el menú ⋯ se superponía a cada hijo de un `@ViewBuilder`, generando varios menús encima del formulario. El código imponía cursores con `NSCursor.set()` al mismo tiempo que `NSTextView` administraba su cursor de selección, provocando alternancia visual al mover el mouse.
+- **Solución Aplicada**: El estado de candidatos ahora es un único panel con encabezado y un solo menú. Añade «Guardar esta pista para revisar» en estados ambiguos o sin resultado. Rust persiste en `genius_miss_reports` un registro por pista y huella de metadatos, con estado, IDs de candidatos y contador de reportes; el ID de reproducción se guarda como hash, sin rutas, cookies ni letras. El texto conserva selección, clic y resaltado de anotaciones, pero deja el cursor a cargo de AppKit.
+- **Archivos Modificados**: `core/crates/sideb-core/src/db.rs`, `core/crates/sideb-core/src/genius.rs`, `core/crates/sideb-core/src/lib.rs`, bindings UniFFI, `apple/Sources/SideB/ViewModels/GeniusViewModel.swift`, `apple/Sources/SideB/Views/Fullscreen/GeniusPanelView.swift`, `documentation/audits/2026-09-27-genius-reported-misses.md`, `documentation/FIXES_LOG.md`.
+- **Verificación**: 12 pruebas locales de Genius y prueba SQLite de deduplicación aprobadas; XCFramework reconstruido; `swift test --package-path apple`: 63 pruebas aprobadas; build Release abierta. La pista «Real (feat. Anna Wise)» mostró el estado ambiguo con un solo menú y el botón de reporte. La persistencia se verificó con prueba SQLite; la pulsación en la app queda por confirmar porque la vista cambió durante la interacción.
+
+### [FIX-077] - La cola sigue operativa tras saltos rápidos y errores de stream
+
+- **Fecha**: 2026-09-27 02:38 (GMT-3)
+- **Agente / Rol**: Swift/macOS
+- **Componente**: `PlayerViewModel` / `AudioPlayerService` / cola
+- **Problema / Causa Raíz**: Cada salto lanzaba inmediatamente consultas de stream y letras aunque el usuario pasara a otra pista; cancelar la tarea Swift no garantiza abortar una llamada UniFFI en curso. Al cambiar de pista se pausaba el item anterior de `AVPlayer`, que podía reanudarse con metadatos de otra canción si la resolución fallaba. Un salto manual al final esperaba la ampliación de la cola, pero la respuesta solo reanudaba tras fin natural del audio.
+- **Solución Aplicada**: Los saltos manuales esperan 180 ms antes de iniciar consultas de stream y letras y descartan la tarea cancelada. El cambio de canción libera el item y la URL anteriores. Si el usuario salta al final, se invalida la resolución anterior y se conserva la intención de avanzar, vinculada a la identidad de reproducción, hasta que llega la siguiente página; se consume una sola vez.
+- **Archivos Modificados**: `apple/Sources/SideB/ViewModels/PlayerViewModel.swift`, `apple/Tests/SideBTests/PlaybackStateStoreTests.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: Pruebas de regresión para saltos repetidos tras un error de resolución y continuación tras salto al final aprobadas con `swift test --package-path apple --filter 'rapidSkipsKeepQueueNavigableAfterResolutionError|manualSkipAtTailContinuesWhenQueueExtends'`. La suite completa `swift test --package-path apple` aprobó 63 pruebas. Falta validar el escenario de saltos rápidos en la app con una sesión real.
+
+### [FIX-078] - Controles y menús blancos coherentes en toda la interfaz
+
+- **Fecha**: 2026-09-27 03:27 (GMT-3)
+- **Agente / Rol**: SwiftUI/AppKit macOS
+- **Componente**: `Sidebar`, `Menu`, `Inicio`, `Biblioteca`, `Búsqueda`, `PlayerBar`, vistas de detalle y fullscreen
+- **Problema / Causa Raíz**: El tinte rojo aplicado a la vista raíz coloreaba controles y menús nativos. A la vez, varios iconos y estados seleccionados fijaban `sidebAccent`, mientras otros controles equivalentes eran blancos o grises. Los botones «…» repetían estilos, tamaños y fondos diferentes entre vistas.
+- **Solución Aplicada**: El tinte de controles pasa a blanco. Se unifican iconos de navegación, acciones y estados activos en blanco, con superficies blancas translúcidas para selecciones; los botones «…» SwiftUI comparten `SideBEllipsisLabel` de 28 pt. Se ajustan controles AppKit del feed, filas y AirPlay. Se conservan colores semánticos para error/destrucción y los resaltados de anotaciones de Genius.
+- **Archivos Modificados**: `apple/Sources/SideB/SideBApp.swift`, `apple/Sources/SideB/UI/ContextMenu/SwiftUIMenuAdapter.swift`, vistas de `Sidebar`, `Home`, `Library`, `Search`, `Detail`, `Components` y `Fullscreen`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `swift build --package-path apple` completado. Pruebas locales del feed aprobadas con `swift test --package-path apple --filter 'buildNSMenu|testHomeFeedCollectionViewMountAndLayout|testHomeItemViewEqualizerOverlayAndDirectPlay'` (2 pruebas ejecutadas). La suite completa compiló, pero una prueba de red en vivo quedó esperando respuesta y se detuvo. Una copia temporal de la build actual confirmó visualmente sidebar, chip activo y controles del reproductor en blanco; el menú abrió con sus acciones disponibles en accesibilidad, aunque la captura de la ventana no incluyó el panel nativo del menú.

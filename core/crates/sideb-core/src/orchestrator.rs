@@ -111,7 +111,8 @@ fn blacklist_insert(map: &mut HashMap<String, Instant>, video_id: &str, now: Ins
 
 /// Is WEB_REMIX still barred for this id? An entry past the TTL counts as absent.
 fn blacklist_blocks(map: &HashMap<String, Instant>, video_id: &str, now: Instant) -> bool {
-    map.get(video_id).is_some_and(|at| now.duration_since(*at) < WEB_REMIX_BLACKLIST_TTL)
+    map.get(video_id)
+        .is_some_and(|at| now.duration_since(*at) < WEB_REMIX_BLACKLIST_TTL)
 }
 
 impl Orchestrator {
@@ -133,7 +134,11 @@ impl Orchestrator {
     /// Record that a WEB_REMIX stream for `video_id` failed on the real GET (called by the player
     /// layer on a playback 403). The next resolve for this id bypasses WEB_REMIX. context/06 §2.
     pub async fn mark_web_remix_failed(&self, video_id: &str) {
-        blacklist_insert(&mut *self.web_remix_failed.lock().await, video_id, Instant::now());
+        blacklist_insert(
+            &mut *self.web_remix_failed.lock().await,
+            video_id,
+            Instant::now(),
+        );
     }
 
     /// Resolve a videoId to a playable stream. context/06 full algorithm.
@@ -155,8 +160,11 @@ impl Orchestrator {
         }
         // An upload only streams to an authenticated client, so it gets its own chain and never
         // falls through to the anonymous ones (context: clients::UPLOAD_FALLBACK_ORDER, issue #71).
-        let order: &[&str] =
-            if is_upload { &UPLOAD_FALLBACK_ORDER } else { &STREAM_FALLBACK_ORDER };
+        let order: &[&str] = if is_upload {
+            &UPLOAD_FALLBACK_ORDER
+        } else {
+            &STREAM_FALLBACK_ORDER
+        };
         // Without the uploads-playlist context YouTube hands back upload URLs that expire in about
         // 32 seconds (Metrolist PR #3857). Harmless for ordinary tracks, so scoped to uploads.
         let playlist_id = is_upload.then_some("MLPT");
@@ -178,9 +186,11 @@ impl Orchestrator {
 
         // 3. Main request as WEB_REMIX (metadata source even when a fallback wins the stream).
         let mut main_resp = match main_client {
-            Some(c) if !disabled.contains(MAIN_CLIENT) => {
-                self.it.player(c, video_id, playlist_id, sts, session_pot).await.ok()
-            }
+            Some(c) if !disabled.contains(MAIN_CLIENT) => self
+                .it
+                .player(c, video_id, playlist_id, sts, session_pot)
+                .await
+                .ok(),
             _ => None,
         };
 
@@ -193,19 +203,37 @@ impl Orchestrator {
         // (decipher, then a PoToken googlevideo accepts). Both do since 2026-08-25 (KI-1), so an
         // age-gated track now has a real chance here; when the path fails it still falls through to
         // the direct clients / rustypipe exactly as before.
-        if logged_in && main_resp.as_ref().is_some_and(|r| r.playability_status.is_age_gated()) {
+        if logged_in
+            && main_resp
+                .as_ref()
+                .is_some_and(|r| r.playability_status.is_age_gated())
+        {
             if let Some(cc) = self.clients.get("WEB_CREATOR") {
-                let cc_pot = if cc.use_web_po_tokens { session_pot } else { None };
-                let cc_sts = if cc.use_signature_timestamp { sts } else { None };
+                let cc_pot = if cc.use_web_po_tokens {
+                    session_pot
+                } else {
+                    None
+                };
+                let cc_sts = if cc.use_signature_timestamp {
+                    sts
+                } else {
+                    None
+                };
                 tracing::info!(video_id, "WEB_REMIX age/login-gated → retrying WEB_CREATOR");
-                if let Ok(r) = self.it.player(cc, video_id, playlist_id, cc_sts, cc_pot).await {
+                if let Ok(r) = self
+                    .it
+                    .player(cc, video_id, playlist_id, cc_sts, cc_pot)
+                    .await
+                {
                     main_resp = Some(r);
                     main_key = "WEB_CREATOR";
                 }
             }
         }
 
-        let main_ok = main_resp.as_ref().is_some_and(|r| r.playability_status.is_ok());
+        let main_ok = main_resp
+            .as_ref()
+            .is_some_and(|r| r.playability_status.is_ok());
         let has_high = main_resp
             .as_ref()
             .and_then(|r| r.streaming_data.as_ref())
@@ -249,13 +277,27 @@ impl Orchestrator {
                 if disabled.contains(key) {
                     continue;
                 }
-                let Some(client) = self.clients.get(key) else { continue };
+                let Some(client) = self.clients.get(key) else {
+                    continue;
+                };
                 if client.login_required && !logged_in {
                     continue;
                 }
-                let client_pot = if client.use_web_po_tokens { session_pot } else { None };
-                let client_sts = if client.use_signature_timestamp { sts } else { None };
-                match self.it.player(client, video_id, playlist_id, client_sts, client_pot).await {
+                let client_pot = if client.use_web_po_tokens {
+                    session_pot
+                } else {
+                    None
+                };
+                let client_sts = if client.use_signature_timestamp {
+                    sts
+                } else {
+                    None
+                };
+                match self
+                    .it
+                    .player(client, video_id, playlist_id, client_sts, client_pot)
+                    .await
+                {
                     Ok(r) if r.playability_status.is_ok() => (key.to_owned(), r),
                     Ok(r) => {
                         tracing::debug!(client = key, status = %r.playability_status.status, "not OK");
@@ -268,9 +310,15 @@ impl Orchestrator {
                 }
             };
 
-            let Some(streaming) = resp.streaming_data.as_ref() else { continue };
-            let Some(expires) = streaming.expires_in_seconds else { continue };
-            let Some(format) = find_format(streaming, quality) else { continue };
+            let Some(streaming) = resp.streaming_data.as_ref() else {
+                continue;
+            };
+            let Some(expires) = streaming.expires_in_seconds else {
+                continue;
+            };
+            let Some(format) = find_format(streaming, quality) else {
+                continue;
+            };
             if audio_config_loudness.is_none() {
                 audio_config_loudness = main_loudness(&resp);
             }
@@ -304,14 +352,22 @@ impl Orchestrator {
             if prefer_high && !is_high(format) && has_high {
                 if better(format, best.as_ref().map(|c| &c.format)) {
                     let ping = main_ping.clone().or_else(|| playback_ping(&resp, &key));
-                    best =
-                        Some(Candidate { format: format.clone(), url, expires, client: key, ping });
+                    best = Some(Candidate {
+                        format: format.clone(),
+                        url,
+                        expires,
+                        client: key,
+                        ping,
+                    });
                 }
                 continue;
             }
 
-            let headers =
-                stream_headers(client.map(|c| c.user_agent.clone()), self.it.cookie(), is_upload);
+            let headers = stream_headers(
+                client.map(|c| c.user_agent.clone()),
+                self.it.cookie(),
+                is_upload,
+            );
             if self.validate_head(&url, &headers).await {
                 let ping = main_ping.clone().or_else(|| playback_ping(&resp, &key));
                 return Ok(self.build(
@@ -342,8 +398,13 @@ impl Orchestrator {
                 if upload_fallback.is_none() {
                     tracing::info!(video_id, client = %key, "upload stream failed HEAD, trying the next login client");
                     let ping = main_ping.clone().or_else(|| playback_ping(&resp, &key));
-                    upload_fallback =
-                        Some(Candidate { format: format.clone(), url, expires, client: key, ping });
+                    upload_fallback = Some(Candidate {
+                        format: format.clone(),
+                        url,
+                        expires,
+                        client: key,
+                        ping,
+                    });
                 }
                 continue;
             }
@@ -399,7 +460,10 @@ impl Orchestrator {
             tracing::warn!(video_id, "no authenticated client could stream this upload");
             return Err(ResolveError::UploadUnavailable(video_id.to_owned()));
         }
-        tracing::info!(video_id, "all InnerTube clients exhausted → rustypipe fallback");
+        tracing::info!(
+            video_id,
+            "all InnerTube clients exhausted → rustypipe fallback"
+        );
         match rustypipe_fallback::resolve(video_id, prefer_high).await {
             Ok(c) => Ok(PlaybackData {
                 video_id: video_id.to_owned(),
@@ -432,7 +496,9 @@ impl Orchestrator {
     /// keeps the artwork.
     pub async fn resolve_video(&self, video_id: &str, max_height: i32) -> Option<String> {
         for key in ["VISIONOS", "ANDROID_VR_1_65_10"] {
-            let Some(client) = self.clients.get(key) else { continue };
+            let Some(client) = self.clients.get(key) else {
+                continue;
+            };
             let resp = match self.it.player(client, video_id, None, None, None).await {
                 Ok(r) => r,
                 Err(e) => {
@@ -443,7 +509,9 @@ impl Orchestrator {
             if !resp.playability_status.is_ok() {
                 continue;
             }
-            let Some(sd) = resp.streaming_data.as_ref() else { continue };
+            let Some(sd) = resp.streaming_data.as_ref() else {
+                continue;
+            };
             // Only ever a direct URL: these clients don't cipher, and a ciphered video is not worth
             // waking the cipher webview for.
             if let Some(url) = find_video_format(sd, max_height).and_then(|f| f.direct_url()) {
@@ -472,7 +540,9 @@ impl Orchestrator {
     async fn validate_head(&self, url: &str, headers: &HashMap<String, String>) -> bool {
         // The 10s budget used to live on a client of its own; it is a property of this one
         // probe, not of the app's HTTP.
-        let mut req = crate::http::client().head(url).timeout(Duration::from_secs(10));
+        let mut req = crate::http::client()
+            .head(url)
+            .timeout(Duration::from_secs(10));
         for (k, v) in headers {
             req = req.header(k, v);
         }
@@ -593,7 +663,10 @@ fn better(a: &Format, b: Option<&Format>) -> bool {
 }
 
 fn main_loudness(resp: &PlayerResponse) -> Option<f64> {
-    resp.player_config.as_ref().and_then(|c| c.audio_config.as_ref()).and_then(|a| a.loudness_db)
+    resp.player_config
+        .as_ref()
+        .and_then(|c| c.audio_config.as_ref())
+        .and_then(|a| a.loudness_db)
 }
 
 fn playback_ping(resp: &PlayerResponse, client: &str) -> Option<PlaybackPing> {
@@ -602,7 +675,10 @@ fn playback_ping(resp: &PlayerResponse, client: &str) -> Option<PlaybackPing> {
         .as_ref()
         .and_then(|t| t.videostats_playback_url.as_ref())
         .and_then(|b| b.base_url.clone())?;
-    Some(PlaybackPing { url, client: client.to_owned() })
+    Some(PlaybackPing {
+        url,
+        client: client.to_owned(),
+    })
 }
 
 fn best_thumbnail(resp: &PlayerResponse) -> Option<String> {
@@ -625,7 +701,10 @@ mod tests {
         let mut map = HashMap::new();
 
         blacklist_insert(&mut map, "fresh", now);
-        assert!(blacklist_blocks(&map, "fresh", now), "a fresh failure bars WEB_REMIX");
+        assert!(
+            blacklist_blocks(&map, "fresh", now),
+            "a fresh failure bars WEB_REMIX"
+        );
         assert!(!blacklist_blocks(&map, "never-failed", now));
 
         // Past the TTL the entry reads as absent, so the track gets its best client back.
@@ -651,7 +730,10 @@ mod tests {
 
         let ordinary = stream_headers(ua(), cookie(), false);
         assert_eq!(ordinary.get("User-Agent").map(String::as_str), Some("UA/1"));
-        assert!(!ordinary.contains_key("Cookie"), "an ordinary stream must not send the cookie");
+        assert!(
+            !ordinary.contains_key("Cookie"),
+            "an ordinary stream must not send the cookie"
+        );
 
         // Signed out: an upload cannot play at all, but it must not produce a bogus header.
         assert!(!stream_headers(ua(), None, true).contains_key("Cookie"));

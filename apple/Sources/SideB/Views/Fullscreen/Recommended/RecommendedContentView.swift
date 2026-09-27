@@ -49,7 +49,7 @@ struct RecommendedContentView: View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.sidebAccent)
+                .foregroundStyle(.primary)
             
             Text("Recomendaciones")
                 .font(.system(size: 13, weight: .semibold))
@@ -147,7 +147,7 @@ struct RecommendedContentView: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9.5, weight: .semibold))
                         }
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -181,7 +181,7 @@ struct RecommendedContentView: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 9.5, weight: .semibold))
                         }
-                        .foregroundStyle(Color.sidebAccent)
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -313,7 +313,7 @@ struct RecommendedContentView: View {
                 }
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(Color.sidebAccent)
+            .foregroundStyle(.primary)
             .buttonStyle(.plain)
             .padding(.top, 4)
         }

@@ -457,3 +457,124 @@ import SwiftUI
     #expect(HomePresentationFactory.sections(from: [translated], chip: nil).first?.id ==
             HomePresentationFactory.sections(from: [records[3]], chip: nil).first?.id)
 }
+
+@Test @MainActor func testHomeItemViewEqualizerOverlayAndDirectPlay() {
+    let songRecord = HomeItemRecord(
+        kind: "song",
+        id: "song_123",
+        title: "Pink + White",
+        subtitle: "Frank Ocean • Blonde",
+        thumbnail: nil,
+        duration: "3:04",
+        artists: "Frank Ocean",
+        artistId: "artist_frank",
+        album: "Blonde",
+        albumId: "album_blonde",
+        artistRuns: [],
+        explicit: false
+    )
+
+    let albumRecord = HomeItemRecord(
+        kind: "album",
+        id: "MPREb_blonde",
+        title: "Blonde",
+        subtitle: "Frank Ocean",
+        thumbnail: nil,
+        duration: nil,
+        artists: "Frank Ocean",
+        artistId: "artist_frank",
+        album: nil,
+        albumId: nil,
+        artistRuns: [],
+        explicit: false
+    )
+
+    let playlistRecord = HomeItemRecord(
+        kind: "playlist",
+        id: "VLPL_my_playlist",
+        title: "Favoritos",
+        subtitle: "Usuario",
+        thumbnail: nil,
+        duration: nil,
+        artists: nil,
+        artistId: nil,
+        album: nil,
+        albumId: nil,
+        artistRuns: [],
+        explicit: false
+    )
+
+    var songDirectPlayClicked = false
+    let songCard = HomeItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 254))
+    songCard.configure(
+        record: songRecord,
+        style: .largeCard,
+        currentTrackID: "song_123",
+        currentAlbumBrowseId: nil,
+        currentPlaylistBrowseId: nil,
+        isPlaying: true,
+        onCard: {}, onCover: {}, onTitle: {}, onArtist: {}, onAlbum: {},
+        onDirectPlay: { songDirectPlayClicked = true },
+        menuProvider: { nil }
+    )
+    songCard.layout()
+
+    // 1. Verificación del overlay animado en canción activa
+    #expect(!songCard.equalizerOverlay.isHidden)
+    #expect(songCard.equalizerOverlay.hitTest(NSPoint(x: 20, y: 20)) == nil)
+
+    // 2. Verificación de pausa
+    songCard.updatePlayback(currentTrackID: "song_123", isPlaying: false)
+    #expect(!songCard.equalizerOverlay.isHidden) // en pausa se mantiene pero congelado
+
+    // 3. Verificación de otra canción
+    songCard.updatePlayback(currentTrackID: "other_song", isPlaying: true)
+    #expect(songCard.equalizerOverlay.isHidden) // ya no es la activa
+
+    // 4. Verificación de álbum activo y reproducción directa
+    var albumDirectPlayClicked = false
+    let albumCard = HomeItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 254))
+    albumCard.configure(
+        record: albumRecord,
+        style: .largeCard,
+        currentTrackID: nil,
+        currentAlbumBrowseId: "MPREb_blonde",
+        currentPlaylistBrowseId: nil,
+        isPlaying: true,
+        onCard: {}, onCover: {}, onTitle: {}, onArtist: {}, onAlbum: {},
+        onDirectPlay: { albumDirectPlayClicked = true },
+        menuProvider: { nil }
+    )
+    albumCard.layout()
+
+    #expect(!albumCard.equalizerOverlay.isHidden)
+
+    // Simular clic en el área táctil de play de la tarjeta del álbum
+    guard let playHitBtn = albumCard.subviews.compactMap({ $0 as? HomePlayHitButton }).first else {
+        Issue.record("No se encontró HomePlayHitButton en la tarjeta")
+        return
+    }
+    playHitBtn.performClick(nil)
+    #expect(albumDirectPlayClicked)
+
+    // 5. Verificación de playlist activa con prefijo normalizado VL
+    let playlistCard = HomeItemView(frame: NSRect(x: 0, y: 0, width: 160, height: 254))
+    playlistCard.configure(
+        record: playlistRecord,
+        style: .largeCard,
+        currentTrackID: nil,
+        currentAlbumBrowseId: nil,
+        currentPlaylistBrowseId: "PL_my_playlist",
+        isPlaying: true,
+        onCard: {}, onCover: {}, onTitle: {}, onArtist: {}, onAlbum: {},
+        onDirectPlay: {},
+        menuProvider: { nil }
+    )
+    playlistCard.layout()
+    #expect(!playlistCard.equalizerOverlay.isHidden)
+
+    // 6. Reciclaje y limpieza
+    playlistCard.prepareForReuse()
+    #expect(playlistCard.equalizerOverlay.isHidden)
+}
+

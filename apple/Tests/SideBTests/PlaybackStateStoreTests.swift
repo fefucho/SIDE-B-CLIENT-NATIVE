@@ -119,3 +119,55 @@ import SideBCore
     #expect(restored.errorMessage == "Núcleo de Rust no inicializado")
     #expect(!restored.isPlaying)
 }
+
+@MainActor
+@Test func rapidSkipsKeepQueueNavigableAfterResolutionError() throws {
+    let preferences = try #require(UserDefaults(suiteName: "SideBPlaybackTests.\(UUID().uuidString)"))
+    let audio = AudioPlayerService(preferences: preferences, preferencePrefix: "test")
+    let player = PlayerViewModel(rustCore: nil, audioService: audio)
+    let tracks = (0..<5).map { index in
+        SongItemRecord(videoId: "track-\(index)", title: "Pista \(index)", artists: "Artista",
+                       album: nil, duration: "2:00", thumbnail: nil, artistId: nil,
+                       albumId: nil, setVideoId: nil, isVideo: false, isUpload: false,
+                       library: nil)
+    }
+    player.queueManager.replaceQueue(with: tracks, context: .custom(title: "Prueba"))
+    audio.play(urlString: "file:///tmp/sideb-no-existe.m4a")
+    #expect(audio.avPlayer.currentItem != nil)
+
+    player.playSongNow(tracks[0])
+    for _ in 0..<4 { player.playNext() }
+
+    #expect(player.queueManager.currentIndex == 4)
+    #expect(player.currentTrack?.videoId == "track-4")
+    #expect(player.errorMessage == "Núcleo de Rust no inicializado")
+    #expect(audio.avPlayer.currentItem == nil)
+    player.playPrevious()
+    #expect(player.queueManager.currentIndex == 3)
+    #expect(player.currentTrack?.videoId == "track-3")
+}
+
+@MainActor
+@Test func manualSkipAtTailContinuesWhenQueueExtends() throws {
+    let preferences = try #require(UserDefaults(suiteName: "SideBPlaybackTests.\(UUID().uuidString)"))
+    let audio = AudioPlayerService(preferences: preferences, preferencePrefix: "test")
+    let player = PlayerViewModel(rustCore: nil, audioService: audio)
+    let first = SongItemRecord(videoId: "first", title: "Primera", artists: "Artista",
+                               album: nil, duration: nil, thumbnail: nil, artistId: nil,
+                               albumId: nil, setVideoId: nil, isVideo: false, isUpload: false,
+                               library: nil)
+    let second = SongItemRecord(videoId: "second", title: "Segunda", artists: "Artista",
+                                album: nil, duration: nil, thumbnail: nil, artistId: nil,
+                                albumId: nil, setVideoId: nil, isVideo: false, isUpload: false,
+                                library: nil)
+    player.queueManager.replaceQueue(with: [first], context: .radio(seedVideoId: "first", title: "Radio", seedName: "Primera"))
+    player.playSongNow(first)
+    player.playNext()
+    player.queueManager.appendRadioTracks([second])
+    player.resumeAfterQueueExtension()
+
+    #expect(player.queueManager.currentIndex == 1)
+    #expect(player.currentTrack?.videoId == "second")
+    player.resumeAfterQueueExtension()
+    #expect(player.queueManager.currentIndex == 1)
+}

@@ -81,9 +81,7 @@ enum Cmd {
         reply: oneshot::Sender<Result<String, Error>>,
     },
     /// Free the isolate, if `generation` is still the live one. Sent by [`Minter`]'s `Drop`.
-    Shutdown {
-        generation: u64,
-    },
+    Shutdown { generation: u64 },
 }
 
 /// The one V8 thread (see the module docs). Started on first use and kept for the life of the
@@ -94,52 +92,65 @@ fn host() -> &'static mpsc::UnboundedSender<Cmd> {
         let (tx, mut rx) = mpsc::unbounded_channel::<Cmd>();
         // If the thread cannot start, or tokio cannot be built on it, `rx` is dropped here and
         // every send below fails as `Error::Fatal` — which is the permanent-degradation latch.
-        let _ = thread::Builder::new().name("botguard".into()).spawn(move || {
-            let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-                return;
-            };
-            rt.block_on(async move {
-                let mut generation = 0_u64;
-                let mut live: Option<(u64, Botguard)> = None;
-                while let Some(cmd) = rx.recv().await {
-                    match cmd {
-                        Cmd::Bootstrap { user_agent, session_ident, reply } => {
-                            // Never two isolates at once: v8 asserts they are dropped in reverse
-                            // creation order (v8-130 isolate.rs:1666) and panics this thread if
-                            // they overlap.
-                            drop(live.take());
-                            generation += 1;
-                            match bootstrap(&user_agent, &session_ident).await {
-                                Ok((bg, token, lifetime)) => {
-                                    // A failed send means the caller timed out and will never hold
-                                    // this generation, so `bg` drops here rather than idling.
-                                    if reply.send(Ok((generation, token, lifetime))).is_ok() {
-                                        live = Some((generation, bg));
+        let _ = thread::Builder::new()
+            .name("botguard".into())
+            .spawn(move || {
+                let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                rt.block_on(async move {
+                    let mut generation = 0_u64;
+                    let mut live: Option<(u64, Botguard)> = None;
+                    while let Some(cmd) = rx.recv().await {
+                        match cmd {
+                            Cmd::Bootstrap {
+                                user_agent,
+                                session_ident,
+                                reply,
+                            } => {
+                                // Never two isolates at once: v8 asserts they are dropped in reverse
+                                // creation order (v8-130 isolate.rs:1666) and panics this thread if
+                                // they overlap.
+                                drop(live.take());
+                                generation += 1;
+                                match bootstrap(&user_agent, &session_ident).await {
+                                    Ok((bg, token, lifetime)) => {
+                                        // A failed send means the caller timed out and will never hold
+                                        // this generation, so `bg` drops here rather than idling.
+                                        if reply.send(Ok((generation, token, lifetime))).is_ok() {
+                                            live = Some((generation, bg));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let _ = reply.send(Err(e));
                                     }
                                 }
-                                Err(e) => {
-                                    let _ = reply.send(Err(e));
-                                }
                             }
-                        }
-                        Cmd::Mint { generation: g, ident, reply } => {
-                            let minted = match &mut live {
-                                Some((live_gen, bg)) if *live_gen == g => {
-                                    bg.mint_token(&ident).await.map_err(classify)
+                            Cmd::Mint {
+                                generation: g,
+                                ident,
+                                reply,
+                            } => {
+                                let minted = match &mut live {
+                                    Some((live_gen, bg)) if *live_gen == g => {
+                                        bg.mint_token(&ident).await.map_err(classify)
+                                    }
+                                    _ => Err(Error::Transient("botguard runtime is gone".into())),
+                                };
+                                let _ = reply.send(minted);
+                            }
+                            Cmd::Shutdown { generation: g } => {
+                                if live.as_ref().is_some_and(|(live_gen, _)| *live_gen == g) {
+                                    live = None;
                                 }
-                                _ => Err(Error::Transient("botguard runtime is gone".into())),
-                            };
-                            let _ = reply.send(minted);
-                        }
-                        Cmd::Shutdown { generation: g } => {
-                            if live.as_ref().is_some_and(|(live_gen, _)| *live_gen == g) {
-                                live = None;
                             }
                         }
                     }
-                }
+                });
             });
-        });
         tx
     })
 }
@@ -151,7 +162,9 @@ pub struct Minter {
 
 impl Drop for Minter {
     fn drop(&mut self) {
-        let _ = host().send(Cmd::Shutdown { generation: self.generation });
+        let _ = host().send(Cmd::Shutdown {
+            generation: self.generation,
+        });
     }
 }
 
@@ -169,21 +182,34 @@ impl Minter {
     pub async fn spawn(user_agent: String, session_ident: String) -> Result<Bootstrap, Error> {
         let (reply, rx) = oneshot::channel();
         host()
-            .send(Cmd::Bootstrap { user_agent, session_ident, reply })
+            .send(Cmd::Bootstrap {
+                user_agent,
+                session_ident,
+                reply,
+            })
             .map_err(|_| Error::Fatal("botguard thread unavailable".into()))?;
         let (generation, session_token, lifetime_secs) = rx
             .await
             .map_err(|_| Error::Fatal("botguard thread stopped during bootstrap".into()))??;
-        Ok(Bootstrap { minter: Minter { generation }, session_token, lifetime_secs })
+        Ok(Bootstrap {
+            minter: Minter { generation },
+            session_token,
+            lifetime_secs,
+        })
     }
 
     /// Mint one PoToken for `ident` (a videoId, for the `&pot=` URL parameter).
     pub async fn mint(&self, ident: &str) -> Result<String, Error> {
         let (reply, rx) = oneshot::channel();
         host()
-            .send(Cmd::Mint { generation: self.generation, ident: ident.to_owned(), reply })
+            .send(Cmd::Mint {
+                generation: self.generation,
+                ident: ident.to_owned(),
+                reply,
+            })
             .map_err(|_| Error::Transient("botguard thread gone".into()))?;
-        rx.await.map_err(|_| Error::Transient("botguard thread gone".into()))?
+        rx.await
+            .map_err(|_| Error::Transient("botguard thread gone".into()))?
     }
 }
 
@@ -204,12 +230,18 @@ async fn bootstrap(
         // dropped in reverse creation order (v8-130 isolate.rs:1666) and panics the whole thread
         // if two overlap, which kills the minter for the rest of the process.
         drop(last.take());
-        let mut bg = Botguard::builder().user_agent(user_agent).init().await.map_err(classify)?;
+        let mut bg = Botguard::builder()
+            .user_agent(user_agent)
+            .init()
+            .await
+            .map_err(classify)?;
         // Session token first, on a fresh minter, before any other identifier — Metrolist enforces
         // that ordering under a mutex and there is no reason to find out the hard way why.
         let token = bg.mint_token(session_ident).await.map_err(classify)?;
-        let it =
-            integrity_token_len(&bg.mint_token(CLASS_PROBE).await.map_err(classify)?, CLASS_PROBE);
+        let it = integrity_token_len(
+            &bg.mint_token(CLASS_PROBE).await.map_err(classify)?,
+            CLASS_PROBE,
+        );
         let lifetime = u64::from(bg.lifetime());
         if it.is_some_and(|n| n <= ACCEPTED_MAX_IT) {
             tracing::info!(
@@ -248,8 +280,9 @@ async fn bootstrap(
 /// decoded one (visitorData routinely arrives with `%3D` padding).
 fn integrity_token_len(pot: &str, ident: &str) -> Option<usize> {
     // `mint_token` returns padded base64url; the harness scripts print it unpadded. Take either.
-    let bytes =
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(pot.trim_end_matches('=')).ok()?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(pot.trim_end_matches('='))
+        .ok()?;
     let ident_len = urlencoding::decode(ident).map_or(ident.len(), |d| d.len());
     bytes.len().checked_sub(ident_len + POT_OVERHEAD)
 }
@@ -278,14 +311,24 @@ mod tests {
     /// sending PoTokens until it is restarted.
     #[test]
     fn js_errors_are_transient() {
-        assert!(matches!(classify(BgError::Js("boom".into())), Error::Transient(_)));
-        assert!(matches!(classify(BgError::InvalidPoToken("nope".into())), Error::Transient(_)));
+        assert!(matches!(
+            classify(BgError::Js("boom".into())),
+            Error::Transient(_)
+        ));
+        assert!(matches!(
+            classify(BgError::InvalidPoToken("nope".into())),
+            Error::Transient(_)
+        ));
     }
 
     #[test]
     fn integrity_token_len_rejects_garbage() {
         assert_eq!(integrity_token_len("not base64!!", "PtHEr7siapo"), None);
-        assert_eq!(integrity_token_len("MlU=", "PtHEr7siapo"), None, "shorter than the overhead");
+        assert_eq!(
+            integrity_token_len("MlU=", "PtHEr7siapo"),
+            None,
+            "shorter than the overhead"
+        );
     }
 
     #[test]
@@ -330,7 +373,10 @@ mod live {
             b.lifetime_secs,
             t1.elapsed()
         );
-        assert!(it.is_some_and(|n| n <= ACCEPTED_MAX_IT), "mint fell out of the accepted class");
+        assert!(
+            it.is_some_and(|n| n <= ACCEPTED_MAX_IT),
+            "mint fell out of the accepted class"
+        );
 
         // The idle teardown drops the minter, which frees the V8 isolate; the next track start
         // builds a fresh one on the same thread. This is the #133 crash: before the singleton
@@ -340,8 +386,15 @@ mod live {
         let again = Minter::spawn(crate::http::WEB_UA.to_owned(), visitor)
             .await
             .expect("second bootstrap after teardown");
-        let pot2 = again.minter.mint(&video_id).await.expect("mint after teardown");
-        println!("after teardown: it {:?}", integrity_token_len(&pot2, &video_id));
+        let pot2 = again
+            .minter
+            .mint(&video_id)
+            .await
+            .expect("mint after teardown");
+        println!(
+            "after teardown: it {:?}",
+            integrity_token_len(&pot2, &video_id)
+        );
         assert!(integrity_token_len(&pot2, &video_id).is_some_and(|n| n <= ACCEPTED_MAX_IT));
     }
 
@@ -359,7 +412,10 @@ mod live {
             std::sync::Arc::new(crate::db::Db::open(std::path::Path::new(":memory:")).unwrap());
         let g = crate::potoken::PoTokenGenerator::new(db);
 
-        assert!(g.get_session_po_token(&visitor).await.is_some(), "first mint");
+        assert!(
+            g.get_session_po_token(&visitor).await.is_some(),
+            "first mint"
+        );
         g.invalidate_session_token().await;
         let t1 = Instant::now();
         assert!(

@@ -163,9 +163,7 @@ struct SidebarProfileView: View {
 
                 Spacer()
 
-                Image(systemName: "ellipsis.circle")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.tertiary)
+                SideBEllipsisLabel()
             }
         }
         .buttonStyle(.plain)

@@ -38,8 +38,14 @@ const AUDIO_EXT: [&str; 15] = [
     "wv", "mka",
 ];
 /// Cover images sitting next to the tracks, in preference order (used when nothing is embedded).
-const COVER_FILES: [&str; 6] =
-    ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "album.jpg"];
+const COVER_FILES: [&str; 6] = [
+    "cover.jpg",
+    "cover.png",
+    "folder.jpg",
+    "folder.png",
+    "front.jpg",
+    "album.jpg",
+];
 
 /// What an untagged file's artist reads as. Shared so the scrobbler can refuse to send it: a
 /// Last.fm profile full of "Unknown artist" is worse than a gap.
@@ -138,9 +144,16 @@ pub fn scan(db: &Db, covers_dir: &Path) -> LocalLibrary {
         db.set_setting(SCAN_VERSION_SETTING, SCAN_VERSION);
     }
 
-    let gone: Vec<String> = known.keys().filter(|p| !found.contains(*p)).cloned().collect();
+    let gone: Vec<String> = known
+        .keys()
+        .filter(|p| !found.contains(*p))
+        .cloned()
+        .collect();
     if !gone.is_empty() {
-        tracing::info!(count = gone.len(), "local files disappeared — dropped from the library");
+        tracing::info!(
+            count = gone.len(),
+            "local files disappeared — dropped from the library"
+        );
         db.delete_local_tracks(&gone);
     }
 
@@ -148,7 +161,10 @@ pub fn scan(db: &Db, covers_dir: &Path) -> LocalLibrary {
     let after: HashSet<String> = card_ids_of(&tracks);
     // Ids the UI may still be showing: the deleted songs, plus the albums and artists that lost
     // their last track.
-    let mut removed: Vec<String> = gone.into_iter().map(|p| format!("{SONG_PREFIX}{p}")).collect();
+    let mut removed: Vec<String> = gone
+        .into_iter()
+        .map(|p| format!("{SONG_PREFIX}{p}"))
+        .collect();
     removed.extend(before.difference(&after).cloned());
 
     LocalLibrary {
@@ -171,12 +187,16 @@ fn walk(dir: &Path, depth: usize, seen: &mut HashSet<PathBuf>, on_file: &mut imp
     if depth > MAX_DEPTH || !seen.insert(dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())) {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         // `metadata` follows symlinks (unlike `entry.file_type`), so a linked album folder or a
         // linked file is treated as what it points at.
-        let Ok(meta) = std::fs::metadata(&path) else { continue };
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
         if meta.is_dir() {
             walk(&path, depth + 1, seen, on_file);
         } else if meta.is_file() && is_audio(&path) {
@@ -206,12 +226,20 @@ fn mtime_of(path: &Path) -> i64 {
 /// any tag reader understands, and a track that silently never appears is worse than one with a
 /// thin label.
 fn read_track(file: &Path, path: &str, mtime: i64, covers_dir: &Path) -> LocalTrack {
-    let tagged = lofty::probe::Probe::open(file).ok().and_then(|p| p.read().ok());
-    let duration_secs =
-        tagged.as_ref().map(|t| t.properties().duration().as_secs() as i64).unwrap_or(0);
-    let tag = tagged.as_ref().and_then(|t| t.primary_tag().or_else(|| t.first_tag()));
+    let tagged = lofty::probe::Probe::open(file)
+        .ok()
+        .and_then(|p| p.read().ok());
+    let duration_secs = tagged
+        .as_ref()
+        .map(|t| t.properties().duration().as_secs() as i64)
+        .unwrap_or(0);
+    let tag = tagged
+        .as_ref()
+        .and_then(|t| t.primary_tag().or_else(|| t.first_tag()));
     let str_tag = |get: fn(&lofty::tag::Tag) -> Option<std::borrow::Cow<'_, str>>| {
-        tag.and_then(get).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        tag.and_then(get)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
     };
 
     let title = str_tag(|t| t.title());
@@ -219,16 +247,24 @@ fn read_track(file: &Path, path: &str, mtime: i64, covers_dir: &Path) -> LocalTr
     let album = str_tag(|t| t.album());
     // The album artist is what groups a compilation into one album instead of one per track.
     let album_artist = tag
-        .and_then(|t| t.get_string(&ItemKey::AlbumArtist).map(|s| s.trim().to_string()))
+        .and_then(|t| {
+            t.get_string(&ItemKey::AlbumArtist)
+                .map(|s| s.trim().to_string())
+        })
         .filter(|s| !s.is_empty());
 
     let dir = file.parent();
-    let stem = file.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
     // Untagged files are the common case for anything not ripped by a tagger, and "Artist - Title"
     // is what those filenames almost always say. Only consulted when the tags are silent.
     let (from_name_artist, from_name_title) = split_filename(&stem);
     let title = title.unwrap_or(from_name_title);
-    let artist = artist.or(from_name_artist).unwrap_or_else(|| UNKNOWN_ARTIST.into());
+    let artist = artist
+        .or(from_name_artist)
+        .unwrap_or_else(|| UNKNOWN_ARTIST.into());
 
     // With no album tag the folder is the album: loose files in one directory belong together
     // whoever performs them, so the key is the folder, not the folder *plus* the artist (which
@@ -293,7 +329,9 @@ pub fn forget_missing(db: &Db, path: &str) -> Vec<String> {
     let all = db.local_tracks(None);
     db.delete_local_tracks(&[path.to_owned()]);
     let mut ids = vec![format!("{SONG_PREFIX}{path}")];
-    let Some(gone) = all.iter().find(|t| t.path == path) else { return ids };
+    let Some(gone) = all.iter().find(|t| t.path == path) else {
+        return ids;
+    };
     let others: Vec<&LocalTrack> = all.iter().filter(|t| t.path != path).collect();
     if !others.iter().any(|t| t.album_key == gone.album_key) {
         ids.push(album_id_of(gone));
@@ -325,7 +363,9 @@ const KEY_CHARS: usize = 80;
 /// The key for files with no album tag: the folder is the album. Includes a digest of the full
 /// path, because two different "Downloads" folders are two different albums.
 fn folder_key(dir: Option<&Path>, name: &str) -> String {
-    let path = dir.map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
+    let path = dir
+        .map(|d| d.to_string_lossy().to_string())
+        .unwrap_or_default();
     format!("dir-{}-{}", short_digest(&path), sanitize(name))
 }
 
@@ -335,7 +375,13 @@ fn folder_key(dir: Option<&Path>, name: &str) -> String {
 fn sanitize(raw: &str) -> String {
     raw.to_lowercase()
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         // `char`s, not bytes: truncating a String mid-codepoint panics.
         .take(KEY_CHARS)
         .collect()
@@ -390,7 +436,9 @@ fn embedded_cover(key: &str, tag: Option<&lofty::tag::Tag>, covers_dir: &Path) -
     };
     let out = covers_dir.join(format!("{key}.{ext}"));
     std::fs::create_dir_all(covers_dir).ok();
-    std::fs::write(&out, pic.data()).ok().map(|_| out.to_string_lossy().to_string())
+    std::fs::write(&out, pic.data())
+        .ok()
+        .map(|_| out.to_string_lossy().to_string())
 }
 
 // --- shaping into the app's models ----------------------------------------------------------
@@ -406,7 +454,10 @@ fn artist_id_of(t: &LocalTrack) -> String {
 /// Every browseId a set of tracks puts on screen. A scan diffs this before and after to find the
 /// cards that lost their last file, so Shortcuts tiles pointing at them go at the same moment.
 fn card_ids_of(tracks: &[LocalTrack]) -> HashSet<String> {
-    tracks.iter().flat_map(|t| [album_id_of(t), artist_id_of(t)]).collect()
+    tracks
+        .iter()
+        .flat_map(|t| [album_id_of(t), artist_id_of(t)])
+        .collect()
 }
 
 pub fn to_song(t: &LocalTrack) -> SongItem {
@@ -538,7 +589,10 @@ fn album_artist(tracks: &[&LocalTrack]) -> String {
             return first.to_string();
         }
     }
-    let first = tracks.first().map(|t| t.artist.as_str()).unwrap_or(UNKNOWN_ARTIST);
+    let first = tracks
+        .first()
+        .map(|t| t.artist.as_str())
+        .unwrap_or(UNKNOWN_ARTIST);
     if tracks.iter().all(|t| t.artist == first) {
         first.to_string()
     } else {
@@ -558,8 +612,11 @@ pub fn album_page(db: &Db, album_key: &str) -> AlbumPage {
 /// order). It renders through the *album* route, because a file on disk has no YouTube channel
 /// behind it — nothing the real artist page offers (subscribe, radio, related) applies.
 pub fn artist_page(db: &Db, name: &str) -> AlbumPage {
-    let tracks: Vec<LocalTrack> =
-        db.local_tracks(None).into_iter().filter(|t| primary_artist(&t.artist) == name).collect();
+    let tracks: Vec<LocalTrack> = db
+        .local_tracks(None)
+        .into_iter()
+        .filter(|t| primary_artist(&t.artist) == name)
+        .collect();
     page_of(Some(name.to_owned()), None, &tracks)
 }
 
@@ -664,7 +721,11 @@ mod tests {
     fn album_key_is_stable_and_filename_safe() {
         let k = album_key("Daft Punk", "Discovery / Deluxe");
         assert_eq!(k, "daft-punk--discovery---deluxe");
-        assert_eq!(album_key("Daft Punk", "Discovery / Deluxe"), k, "same album, same key");
+        assert_eq!(
+            album_key("Daft Punk", "Discovery / Deluxe"),
+            k,
+            "same album, same key"
+        );
         assert!(!k.contains('/'), "the key doubles as the cover's filename");
 
         // Non-Latin titles have to stay distinct: mapping them all to `-` merged every Japanese
@@ -673,7 +734,10 @@ mod tests {
         let b = album_key("米津玄師", "アルバムB");
         assert_ne!(a, b, "two Japanese albums are two albums");
         let long = album_key("x", &"あ".repeat(200));
-        assert!(long.chars().count() <= KEY_CHARS + 16, "keys stay filename-sized");
+        assert!(
+            long.chars().count() <= KEY_CHARS + 16,
+            "keys stay filename-sized"
+        );
         // Two albums that only differ past the cut are still two albums.
         assert_ne!(
             album_key("x", &format!("{} one", "long ".repeat(30))),
@@ -690,8 +754,15 @@ mod tests {
     #[test]
     fn a_local_song_offers_no_album_to_go_to() {
         let s = to_song(&track("/m/x/a.mp3", "Drake", "Views", "drake--views"));
-        assert_eq!(s.album.as_deref(), Some("Views"), "the name still travels (scrobbles, lyrics)");
-        assert_eq!(s.album_id, None, "but nothing for the ⋯ menu to navigate to");
+        assert_eq!(
+            s.album.as_deref(),
+            Some("Views"),
+            "the name still travels (scrobbles, lyrics)"
+        );
+        assert_eq!(
+            s.album_id, None,
+            "but nothing for the ⋯ menu to navigate to"
+        );
     }
 
     #[test]
@@ -705,10 +776,16 @@ mod tests {
         ];
         let albums = albums_of(&tracks);
         assert_eq!(albums.len(), 1, "one folder, one album");
-        assert_eq!(albums[0].subtitle.as_deref(), Some("Various artists • 2 songs"));
+        assert_eq!(
+            albums[0].subtitle.as_deref(),
+            Some("Various artists • 2 songs")
+        );
 
         let same = vec![track("/m/x/a.mp3", "Drake", "Views", "drake--views")];
-        assert_eq!(albums_of(&same)[0].subtitle.as_deref(), Some("Drake • 1 song"));
+        assert_eq!(
+            albums_of(&same)[0].subtitle.as_deref(),
+            Some("Drake • 1 song")
+        );
     }
 
     #[test]
@@ -721,7 +798,10 @@ mod tests {
         for t in &mut tracks {
             t.album_artist = Some("Drake".into());
         }
-        assert_eq!(albums_of(&tracks)[0].subtitle.as_deref(), Some("Drake • 2 songs"));
+        assert_eq!(
+            albums_of(&tracks)[0].subtitle.as_deref(),
+            Some("Drake • 2 songs")
+        );
     }
 
     #[test]
@@ -736,8 +816,15 @@ mod tests {
             track("/m/e.mp3", "Tyler, The Creator", "Igor", "tyler--igor"),
         ];
         let artists = artists_of(&tracks);
-        assert_eq!(artists.len(), 2, "Drake and Tyler — no 21 Savage, no Future");
-        assert_eq!(artists[0].kind, "artist", "which is what draws it as a circle");
+        assert_eq!(
+            artists.len(),
+            2,
+            "Drake and Tyler — no 21 Savage, no Future"
+        );
+        assert_eq!(
+            artists[0].kind, "artist",
+            "which is what draws it as a circle"
+        );
         assert_eq!(artists[0].title, "Drake");
         assert_eq!(artists[0].subtitle.as_deref(), Some("4 songs"));
         assert_eq!(artists[1].title, "Tyler, The Creator");
@@ -747,8 +834,15 @@ mod tests {
         db.put_local_tracks(&tracks);
         let page = artist_page(&db, artists[0].id.strip_prefix(ARTIST_PREFIX).unwrap());
         assert_eq!(page.title.as_deref(), Some("Drake"));
-        assert_eq!(page.items.len(), 4, "the page picks up the collaborations too");
-        assert_eq!(page.playlist_id, None, "nothing YouTube-shaped on a page built from disk");
+        assert_eq!(
+            page.items.len(),
+            4,
+            "the page picks up the collaborations too"
+        );
+        assert_eq!(
+            page.playlist_id, None,
+            "nothing YouTube-shaped on a page built from disk"
+        );
     }
 
     #[test]
@@ -799,7 +893,10 @@ mod tests {
         assert_eq!(folders(&db), vec!["/music".to_string()]);
         add_folder(&db, "/other/jazz".into());
         add_folder(&db, "/other".into()); // supersedes the child
-        assert_eq!(folders(&db), vec!["/music".to_string(), "/other".to_string()]);
+        assert_eq!(
+            folders(&db),
+            vec!["/music".to_string(), "/other".to_string()]
+        );
         remove_folder(&db, "/music");
         assert_eq!(folders(&db), vec!["/other".to_string()]);
     }
@@ -821,14 +918,27 @@ mod tests {
             lib.songs.is_empty() && lib.albums.is_empty(),
             "the rows are gone from the library"
         );
-        assert_eq!(lib.removed.len(), 5, "two songs, two albums and the one artist are removed");
-        assert!(lib.removed.contains(&format!("{ARTIST_PREFIX}Band")), "the artist's circle too");
-        assert!(lib.removed.iter().any(|id| id.ends_with("a.mp3")), "the song id the UI knows");
+        assert_eq!(
+            lib.removed.len(),
+            5,
+            "two songs, two albums and the one artist are removed"
+        );
+        assert!(
+            lib.removed.contains(&format!("{ARTIST_PREFIX}Band")),
+            "the artist's circle too"
+        );
+        assert!(
+            lib.removed.iter().any(|id| id.ends_with("a.mp3")),
+            "the song id the UI knows"
+        );
         assert!(
             lib.removed.contains(&format!("{ALBUM_PREFIX}band--one")),
             "and the album id, so its Shortcuts tile can go too"
         );
-        assert!(scan(&db, &dir.join("covers")).removed.is_empty(), "a second scan reports nothing");
+        assert!(
+            scan(&db, &dir.join("covers")).removed.is_empty(),
+            "a second scan reports nothing"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -855,7 +965,10 @@ mod tests {
             "the last track takes the album and the artist with it"
         );
         assert!(db.local_tracks(None).is_empty(), "and both rows are gone");
-        assert!(forget_missing(&db, "/m/a.mp3").len() == 1, "forgetting twice is harmless");
+        assert!(
+            forget_missing(&db, "/m/a.mp3").len() == 1,
+            "forgetting twice is harmless"
+        );
     }
 
     #[test]

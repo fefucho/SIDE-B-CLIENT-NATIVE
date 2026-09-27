@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::Mutex;
 use fetcher::PlayerJsFetcher;
+use tokio::sync::Mutex;
 
 #[derive(Default)]
 struct Inner {
@@ -119,7 +119,10 @@ impl CipherDeobfuscator {
             });
         }
 
-        let sts = cfg.as_ref().and_then(|c| c.sts).or_else(|| extractor::extract_sts(&player.js));
+        let sts = cfg
+            .as_ref()
+            .and_then(|c| c.sts)
+            .or_else(|| extractor::extract_sts(&player.js));
 
         let mut inner = self.inner.lock().await;
         inner.sts = sts;

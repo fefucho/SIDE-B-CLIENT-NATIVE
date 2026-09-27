@@ -100,6 +100,35 @@ impl Db {
                 lyrics     TEXT,
                 fetched_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS genius_cache (
+                kind        TEXT NOT NULL,
+                cache_key   TEXT NOT NULL,
+                payload     TEXT NOT NULL,
+                fetched_at  INTEGER NOT NULL,
+                last_access INTEGER NOT NULL,
+                PRIMARY KEY(kind, cache_key)
+            );
+            CREATE INDEX IF NOT EXISTS genius_cache_access ON genius_cache(last_access);
+            CREATE TABLE IF NOT EXISTS genius_choices (
+                track_key   TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                song_id     INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS genius_miss_reports (
+                track_key        TEXT NOT NULL,
+                fingerprint      TEXT NOT NULL,
+                title            TEXT NOT NULL,
+                artists          TEXT NOT NULL,
+                album            TEXT,
+                duration_seconds INTEGER,
+                is_upload        INTEGER NOT NULL,
+                status           TEXT NOT NULL,
+                candidate_ids    TEXT NOT NULL,
+                first_reported_at INTEGER NOT NULL,
+                last_reported_at  INTEGER NOT NULL,
+                report_count      INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(track_key, fingerprint)
+            );
             CREATE TABLE IF NOT EXISTS plays (
                 id        INTEGER PRIMARY KEY,
                 video_id  TEXT NOT NULL,
@@ -585,6 +614,164 @@ impl Db {
         let _ = conn.execute("DELETE FROM lyrics_cache", []);
     }
 
+    // --- Genius cache -----------------------------------------------------------------------
+
+    /// A miss is represented by a serialized status, never by a transport failure.
+    pub fn get_genius_cache(&self, kind: &str, key: &str, ttl_secs: i64) -> Option<String> {
+        let conn = self.0.lock().unwrap();
+        let now = now_secs();
+        let (payload, fetched_at): (String, i64) = conn
+            .query_row(
+                "SELECT payload, fetched_at FROM genius_cache WHERE kind = ?1 AND cache_key = ?2",
+                rusqlite::params![kind, key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .ok()?;
+        if now.saturating_sub(fetched_at) > ttl_secs {
+            return None;
+        }
+        let _ = conn.execute(
+            "UPDATE genius_cache SET last_access = ?3 WHERE kind = ?1 AND cache_key = ?2",
+            rusqlite::params![kind, key, now],
+        );
+        Some(payload)
+    }
+
+    pub fn put_genius_cache(&self, kind: &str, key: &str, payload: &str) {
+        let conn = self.0.lock().unwrap();
+        let now = now_secs();
+        let _ = conn.execute(
+            "INSERT INTO genius_cache(kind, cache_key, payload, fetched_at, last_access) VALUES(?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(kind, cache_key) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at, last_access = excluded.last_access",
+            rusqlite::params![kind, key, payload, now],
+        );
+        // Bound each type and, separately, the number of distinct song detail documents.
+        if kind != "detail" {
+            let _ = conn.execute(
+                "DELETE FROM genius_cache WHERE rowid IN
+                 (SELECT rowid FROM genius_cache WHERE kind = ?1 ORDER BY last_access DESC, rowid DESC LIMIT -1 OFFSET 500)",
+                [kind],
+            );
+        }
+        let old_songs: Vec<String> = conn
+            .prepare("SELECT cache_key FROM genius_cache WHERE kind = 'detail' ORDER BY last_access DESC, rowid DESC LIMIT -1 OFFSET 500")
+            .and_then(|mut stmt| stmt.query_map([], |row| row.get(0)).map(|rows| rows.filter_map(Result::ok).collect()))
+            .unwrap_or_default();
+        for song_id in old_songs {
+            let _ = conn.execute(
+                "DELETE FROM genius_cache WHERE cache_key = ?1 AND kind IN ('detail', 'lyrics')",
+                [&song_id],
+            );
+            let _ = conn.execute(
+                "DELETE FROM genius_cache WHERE kind = 'annotations' AND cache_key LIKE ?1",
+                [format!("{song_id}:%")],
+            );
+        }
+        loop {
+            let bytes: i64 = conn
+                .query_row(
+                    "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM genius_cache",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            if bytes <= 100 * 1024 * 1024 {
+                break;
+            }
+            let removed: Option<i64> = conn
+                .query_row(
+                    "SELECT rowid FROM genius_cache ORDER BY last_access, rowid LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
+            let Some(rowid) = removed else { break };
+            let _ = conn.execute("DELETE FROM genius_cache WHERE rowid = ?1", [rowid]);
+        }
+    }
+
+    pub fn remove_genius_cache(&self, kind: &str, key: &str) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "DELETE FROM genius_cache WHERE kind = ?1 AND cache_key = ?2",
+            rusqlite::params![kind, key],
+        );
+    }
+
+    pub fn get_genius_choice(&self, track_key: &str, fingerprint: &str) -> Option<i64> {
+        let conn = self.0.lock().unwrap();
+        conn.query_row(
+            "SELECT song_id FROM genius_choices WHERE track_key = ?1 AND fingerprint = ?2",
+            rusqlite::params![track_key, fingerprint],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    pub fn put_genius_choice(&self, track_key: &str, fingerprint: &str, song_id: i64) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "INSERT INTO genius_choices(track_key, fingerprint, song_id) VALUES(?1, ?2, ?3)
+             ON CONFLICT(track_key) DO UPDATE SET fingerprint = excluded.fingerprint, song_id = excluded.song_id",
+            rusqlite::params![track_key, fingerprint, song_id],
+        );
+    }
+
+    pub fn remove_genius_choice(&self, track_key: &str) {
+        let conn = self.0.lock().unwrap();
+        let _ = conn.execute(
+            "DELETE FROM genius_choices WHERE track_key = ?1",
+            [track_key],
+        );
+    }
+
+    /// User-requested local report of a failed automatic match. The key hashes the playback ID,
+    /// so a local file path or account identifier is never stored in this diagnostic table.
+    pub fn record_genius_miss(
+        &self,
+        track_key: &str,
+        fingerprint: &str,
+        title: &str,
+        artists: &str,
+        album: Option<&str>,
+        duration_seconds: Option<u64>,
+        is_upload: bool,
+        status: &str,
+        candidate_ids: &str,
+    ) -> rusqlite::Result<()> {
+        let conn = self.0.lock().unwrap();
+        let now = now_secs();
+        conn.execute(
+            "INSERT INTO genius_miss_reports
+             (track_key, fingerprint, title, artists, album, duration_seconds, is_upload,
+              status, candidate_ids, first_reported_at, last_reported_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
+             ON CONFLICT(track_key, fingerprint) DO UPDATE SET
+                 title = excluded.title,
+                 artists = excluded.artists,
+                 album = excluded.album,
+                 duration_seconds = excluded.duration_seconds,
+                 is_upload = excluded.is_upload,
+                 status = excluded.status,
+                 candidate_ids = excluded.candidate_ids,
+                 last_reported_at = excluded.last_reported_at,
+                 report_count = genius_miss_reports.report_count + 1",
+            rusqlite::params![
+                track_key,
+                fingerprint,
+                title,
+                artists,
+                album,
+                duration_seconds.and_then(|seconds| i64::try_from(seconds).ok()),
+                is_upload,
+                status,
+                candidate_ids,
+                now,
+            ],
+        )?;
+        Ok(())
+    }
+
     // --- lyrics cache -----------------------------------------------------------------------
 
     /// Cached lyrics JSON for a track. `Some(None)` = a cached "no lyrics" verdict (NULL row),
@@ -964,6 +1151,34 @@ mod tests {
 
     fn db() -> Db {
         Db::open(std::path::Path::new(":memory:")).unwrap()
+    }
+
+    #[test]
+    fn genius_miss_reports_keep_one_row_per_track_metadata_and_count_repeats() {
+        let d = db();
+        for _ in 0..2 {
+            d.record_genius_miss(
+                "hashed-video",
+                "metadata-v1",
+                "Real",
+                "Kendrick Lamar",
+                Some("good kid, m.A.A.d city"),
+                Some(445),
+                false,
+                "ambiguous",
+                "[1,2]",
+            )
+            .unwrap();
+        }
+        let conn = d.0.lock().unwrap();
+        let (count, reports, ids): (i64, i64, String) = conn
+            .query_row(
+                "SELECT COUNT(*), MAX(report_count), MAX(candidate_ids) FROM genius_miss_reports",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!((count, reports, ids.as_str()), (1, 2, "[1,2]"));
     }
 
     #[test]
