@@ -4,6 +4,7 @@ import SideBCore
 // MARK: - SidebarView
 
 struct SidebarView: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Binding var isExpanded: Bool
     @Bindable var router: NavigationRouter
     @Bindable var accountViewModel: AccountViewModel
@@ -300,6 +301,23 @@ struct SidebarView: View {
             .padding(.bottom, 12)
         }
         .frame(width: 230)
+        .background(alignment: .top) {
+            if !reduceTransparency,
+               let artwork = playerViewModel?.currentTrack?.thumbnail,
+               let url = ImageURLHelper.optimizedThumbnailURL(from: artwork, targetPixelSize: 256) {
+                CachedAsyncImage(url: url, targetSize: CGSize(width: 256, height: 256)) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color.clear
+                }
+                .frame(width: 260, height: 260)
+                .blur(radius: 55)
+                .opacity(0.24)
+                .frame(width: 230, height: 420, alignment: .top)
+                .clipped()
+                .allowsHitTesting(false)
+            }
+        }
         .compatTranslucentSidebar()
         .overlay(alignment: .trailing) {
             Divider()
@@ -393,10 +411,10 @@ struct SidebarView: View {
             .padding(.vertical, 7)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.12) : Color.clear)
+                    .fill(isSelected ? Color.sidebAccent.opacity(0.55) : Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(isSelected ? Color.white.opacity(0.08) : Color.clear, lineWidth: 0.5)
+                            .stroke(isSelected ? Color.sidebAccent.opacity(0.65) : Color.clear, lineWidth: 0.5)
                     )
             )
             .contentShape(Rectangle())
@@ -444,10 +462,10 @@ struct SidebarView: View {
             .padding(.vertical, 5)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isSelected ? Color.white.opacity(0.12) : Color.clear)
+                    .fill(isSelected ? Color.sidebAccent.opacity(0.55) : Color.clear)
                     .overlay(
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .stroke(isSelected ? Color.white.opacity(0.08) : Color.clear, lineWidth: 0.5)
+                            .stroke(isSelected ? Color.sidebAccent.opacity(0.65) : Color.clear, lineWidth: 0.5)
                     )
             )
             .contentShape(Rectangle())
@@ -458,7 +476,7 @@ struct SidebarView: View {
     private func itemPlaceholder(icon: String, isSelected: Bool) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(isSelected ? Color.white.opacity(0.2) : Color.white.opacity(0.06))
+                .fill(isSelected ? Color.sidebAccent.opacity(0.7) : Color.white.opacity(0.06))
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(isSelected ? Color.white : Color.secondary)

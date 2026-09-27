@@ -2630,3 +2630,39 @@
 - **Solución Aplicada**: El tinte de controles pasa a blanco. Se unifican iconos de navegación, acciones y estados activos en blanco, con superficies blancas translúcidas para selecciones; los botones «…» SwiftUI comparten `SideBEllipsisLabel` de 28 pt. Se ajustan controles AppKit del feed, filas y AirPlay. Se conservan colores semánticos para error/destrucción y los resaltados de anotaciones de Genius.
 - **Archivos Modificados**: `apple/Sources/SideB/SideBApp.swift`, `apple/Sources/SideB/UI/ContextMenu/SwiftUIMenuAdapter.swift`, vistas de `Sidebar`, `Home`, `Library`, `Search`, `Detail`, `Components` y `Fullscreen`, `documentation/FIXES_LOG.md`.
 - **Verificación**: `swift build --package-path apple` completado. Pruebas locales del feed aprobadas con `swift test --package-path apple --filter 'buildNSMenu|testHomeFeedCollectionViewMountAndLayout|testHomeItemViewEqualizerOverlayAndDirectPlay'` (2 pruebas ejecutadas). La suite completa compiló, pero una prueba de red en vivo quedó esperando respuesta y se detuvo. Una copia temporal de la build actual confirmó visualmente sidebar, chip activo y controles del reproductor en blanco; el menú abrió con sus acciones disponibles en accesibilidad, aunque la captura de la ventana no incluyó el panel nativo del menú.
+
+### [FIX-079] - Acento suave y contraste legible en estados seleccionados
+
+- **Fecha**: 2026-09-27 15:45 (GMT-3)
+- **Agente / Rol**: SwiftUI/AppKit macOS
+- **Componente**: Tema visual, pantalla completa, barra lateral, Inicio, Biblioteca, Búsqueda y reproductor
+- **Problema / Causa Raíz**: Tras unificar controles en blanco, la cápsula seleccionada de Cola/Letras/Relacionado también quedó blanca mientras el texto seleccionado seguía blanco, por lo que la etiqueta desaparecía. El tema aún definía el rojo brillante anterior y los estados activos carecían de una jerarquía cromática coherente.
+- **Solución Aplicada**: Se define rojo suave mate `#A33D45`, elegido tras comparar cuatro tonos, para superficies seleccionadas, y una versión aclarada más roja `#D06C70` para iconos activos y el tramo reproducido de la barra de tiempo. La cápsula de pantalla completa, los chips de Inicio/Biblioteca/Búsqueda, las selecciones de la barra lateral y el botón principal de reproducir/pausar usan el acento base. El botón de reproducción conserva icono blanco y presenta un círculo rojo sin sombra; los estados deshabilitado y de error conservan su tratamiento propio. Se eliminó la sombra cromática de la cápsula para evitar el aura luminosa. Los controles inactivos y menús mantienen texto e iconos blancos o neutros. El contraste calculado de blanco sobre `#A33D45` es 6,34:1.
+- **Archivos Modificados**: `apple/Sources/SideB/UI/AppTheme.swift`, vistas `PlayerBarView`, `FullscreenNowPlayingView`, `HomeView`, `LibraryView`, `SearchView`, `SidebarView` y `documentation/FIXES_LOG.md`.
+- **Verificación**: `git diff --check` sin errores y build Release completada con `Scripts/compile_and_run.sh` tras elegir `#A33D45`; la app empaquetada se abrió. La inspección visual confirmó el botón de reproducir rojo con icono blanco, el icono activo de Genius en el rojo aclarado, texto blanco legible en la cápsula seleccionada y ausencia de halo coloreado. El tramo reproducido usa la misma constante cromática que los iconos activos; en esta sesión la pista restaurada estaba en 0:00 y no había tramo visible para comprobar en pantalla.
+
+### [FIX-080] - Catálogo completo del artista y versiones alternativas del álbum
+
+- **Fecha**: 2026-09-27 17:07 (GMT-3)
+- **Agente / Rol**: Core Rust, UniFFI y SwiftUI/AppKit
+- **Componente**: Perfil de artista, navegación de catálogo y detalle de álbum
+- **Problema / Causa Raíz**: «Ver todo» en los carruseles del artista enviaba el `browseId` y sus `params` a la vista de playlist, que mostraba una página vacía. El parser de álbum ya recibía secciones como «Other versions», pero `AlbumDetailRecord` no las pasaba a Swift y la vista no tenía un pie después de las pistas.
+- **Solución Aplicada**: Se añadió una ruta de catálogo que consulta el destino del carrusel con sus parámetros y muestra sus tarjetas navegables. El contrato UniFFI del álbum ahora incluye sus secciones; la tabla de pistas admite un pie desplazable que presenta las ediciones alternativas y demás secciones entregadas por YouTube Music.
+- **Archivos Modificados**: `core/crates/sideb-core/src/lib.rs`, bindings generados de `apple/SideBCore/Sources/SideBCore/`, `apple/Sources/SideB/Services/Navigation/NavigationRouter.swift`, `apple/Sources/SideB/SideBApp.swift`, `apple/Sources/SideB/Views/Detail/ArtistDetailView.swift`, `apple/Sources/SideB/Views/Detail/ArtistCatalogView.swift`, `apple/Sources/SideB/Views/Detail/AlbumDetailView.swift`, `apple/Sources/SideB/Views/Common/NativeTrackTableView.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `cargo test -p innertube --lib`: 87 pruebas aprobadas; `swift test -c release --filter SideBTests`: 66 pruebas aprobadas. `apple/build_xcframework.sh` regeneró Core y bindings. `Scripts/compile_and_run.sh` compiló la app Release con SDK 27.0, creó `apple/.build/app/SideB.app` y la abrió; el proceso quedó activo. Falta verificar visualmente con un álbum y artista concretos que YouTube Music entregue las ediciones esperadas.
+
+### [FIX-081] - Detección automática precisa en Genius y resolución de colaboraciones, secuelas y metadatos
+
+- **Fecha**: 2026-09-27 17:35 (GMT-3)
+- **Agente / Rol**: Core Rust & UniFFI
+- **Componente**: `GeniusEngine` (`core/crates/sideb-core/src/genius.rs`), caché de coincidencias SQLite (`MATCH_RULE_VERSION v3`)
+- **Problema / Causa Raíz**: Canciones con artistas invitados en Genius formateados como `(Ft. ...)` o colaboraciones base (ej. `21 Savage & Metro Boomin`) fallaban la comprobación de `artist_credit_matches` y quedaban en estado `ambiguous` pese a tener coincidencia exacta con 95-100% de confianza. Además, canciones secuela (`Flashing Lights 2`) rankeaban por encima del tema original al no penalizarse sufijos numéricos de secuela, y títulos con múltiples paréntesis o etiquetas como `(Bonus Track)` o `(Remastered 2011)` no se limpiaban en la búsqueda enviada a Genius produciendo `not_found`.
+- **Solución Aplicada**:
+  1. Se implementó `base_artist_credit` con regex flexible que remueve `(Ft. ...)`, `(feat. ...)`, `[with ...]` y variantes, preservando colaboraciones base.
+  2. `artist_credit_matches` y `artist_score` ahora comparan el artista base limpio, otorgando 1.0 a coincidencias exactas y admitiendo colaboraciones de artistas principales.
+  3. `clean_query_title` ahora procesa iterativamente múltiples bloques de metadatos (`Bonus Track`, `Deluxe Edition`, `Remastered`, `Album/Single Version`), permitiendo que canciones como `Now Or Never` o `Bohemian Rhapsody` consulten directamente el título canónico en Genius.
+  4. Se introdujo `has_sequel_suffix` para penalizar títulos con sufijos numéricos o de versión (` 2`, ` Pt. 2`, ` V15`) si la pista en reproducción no los contiene, asegurando que el tema original siempre supere a una secuela.
+  5. `MATCH_RULE_VERSION` subió a `v3`, invalidando de forma transparente las entradas obsoletas de coincidencia ambigua en SQLite para que se reevalúen automáticamente al reproducir.
+- **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `cargo test -p sideb-core`: 79 pruebas unitarias aprobadas (incluyendo 8 casos nuevos del corpus de reportes y desempate de secuela); `live_resolution_matrix` en vivo aprobada con `Starboy`, `Runaway` y `Bohemian Rhapsody` resolviendo con confianza 1.0; `SideBCore.xcframework` reconstruido; `swift test --package-path apple`: 66 pruebas aprobadas en 5 suites; `Scripts/compile_and_run.sh` ejecutado con éxito y la app `SideB` lanzada y activa (PID 83959).
+

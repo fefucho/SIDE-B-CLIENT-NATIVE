@@ -17,7 +17,7 @@ use crate::{db::Db, SideBError};
 
 const MATCH_TTL: i64 = 30 * 24 * 3600;
 // Match rules change independently of cached song documents and manual choices.
-const MATCH_RULE_VERSION: &str = "v2";
+const MATCH_RULE_VERSION: &str = "v3";
 const CONTENT_TTL: i64 = 30 * 24 * 3600;
 const LYRICS_TTL: i64 = 7 * 24 * 3600;
 const MISS_TTL: i64 = 24 * 3600;
@@ -124,6 +124,19 @@ pub struct GeniusLyricSpanRecord {
 #[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
 pub struct GeniusLyricsRecord {
     pub lines: Vec<GeniusLyricLineRecord>,
+}
+
+const LYRICS_CACHE_VERSION: u8 = 2;
+
+#[derive(Serialize, Deserialize)]
+struct CachedLyrics {
+    version: u8,
+    lyrics: GeniusLyricsRecord,
+}
+
+fn read_cached_lyrics(json: &str) -> Option<GeniusLyricsRecord> {
+    let cached: CachedLyrics = serde_json::from_str(json).ok()?;
+    (cached.version == LYRICS_CACHE_VERSION).then_some(cached.lyrics)
 }
 
 /// Session-local aggregate diagnostics. Never contains titles, IDs or lyric text.
@@ -279,25 +292,36 @@ impl GeniusEngine {
             }
         }
 
-        let mut candidates = self
-            .search_candidates(&format!("{} {}", track.title, track.artists))
-            .await?;
+        let clean_title = clean_query_title(&track.title);
+        let base_artist = base_artist_credit(&track.artists);
+        let initial_query = format!("{clean_title} {base_artist}");
+
+        let mut candidates = self.search_candidates(&initial_query).await?;
         rank_candidates(&track, &mut candidates);
         if !is_auto_match(&track, &candidates) {
-            let fallback_title = clean_query_title(&track.title);
-            let fallback_artist = primary_artist(&track.artists);
-            let fallback_query = format!("{fallback_title} {fallback_artist}");
-            if normalize(&fallback_query)
-                != normalize(&format!("{} {}", track.title, track.artists))
-            {
+            let fallback_artist = lead_artist(&track.artists);
+            let fallback_query = format!("{clean_title} {fallback_artist}");
+            if normalize(&fallback_query) != normalize(&initial_query) {
                 let extra = self.search_candidates(&fallback_query).await?;
                 let mut seen: HashSet<i64> = candidates.iter().map(|c| c.id).collect();
                 candidates.extend(extra.into_iter().filter(|c| seen.insert(c.id)));
                 rank_candidates(&track, &mut candidates);
             }
+            if !is_auto_match(&track, &candidates)
+                && normalize(&track.title) != normalize(&clean_title)
+            {
+                let raw_query = format!("{} {}", track.title, track.artists);
+                if normalize(&raw_query) != normalize(&initial_query)
+                    && normalize(&raw_query) != normalize(&fallback_query)
+                {
+                    let extra = self.search_candidates(&raw_query).await?;
+                    let mut seen: HashSet<i64> = candidates.iter().map(|c| c.id).collect();
+                    candidates.extend(extra.into_iter().filter(|c| seen.insert(c.id)));
+                    rank_candidates(&track, &mut candidates);
+                }
+            }
         }
         // Very short names such as "OFF" otherwise surface unrelated titles containing the word.
-        let clean_title = clean_query_title(&track.title);
         if normalize(&clean_title)
             .chars()
             .filter(|c| !c.is_whitespace())
@@ -697,16 +721,18 @@ fn normalize(text: &str) -> String {
         .join(" ")
 }
 
-fn primary_artist(artists: &str) -> &str {
-    let first = artists.split(',').next().unwrap_or(artists).trim();
-    static FEATURE: OnceLock<regex::Regex> = OnceLock::new();
-    let pattern = FEATURE.get_or_init(|| {
-        regex::Regex::new(r"(?i)\s+(?:feat\.?|ft\.?|featuring|with|x)\s+").expect("constant regex")
+fn base_artist_credit(artists: &str) -> String {
+    static FEATURE_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let re = FEATURE_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:\s*[\(\[\{]\s*(?:feat\.?|ft\.?|featuring|with|w/)\s+[^\]\)\}]+[\)\]\}]|\s+(?:feat\.?|ft\.?|featuring|with|w/)\s+.*$)").expect("constant regex")
     });
-    let first = pattern
-        .find(first)
-        .map_or(first, |found| first[..found.start()].trim());
-    first.split(" & ").next().unwrap_or(first).trim()
+    re.replace_all(artists.trim(), "").trim().to_owned()
+}
+
+fn lead_artist(artists: &str) -> String {
+    let base = base_artist_credit(artists);
+    let first = base.split(',').next().unwrap_or(&base).trim();
+    first.split(" & ").next().unwrap_or(first).trim().to_owned()
 }
 
 fn title_equivalent(left: &str, right: &str) -> bool {
@@ -732,27 +758,61 @@ fn artist_credit_matches(source: &str, candidate: &str) -> bool {
         return true;
     }
     // The YouTube catalog sometimes credits the same person twice under both names.
-    if source_full == "kanye west ye" && candidate_full == "kanye west" {
+    if (source_full == "kanye west ye" || source_full == "ye kanye west")
+        && (candidate_full == "kanye west" || candidate_full == "ye")
+    {
         return true;
     }
-    // A single source artist can match a Genius record with additional performers.
-    // A source collaboration must retain its guest credits to match automatically.
-    normalize(primary_artist(source)) == source_full
-        && source_full == normalize(primary_artist(candidate))
+    let source_base = normalize(&base_artist_credit(source));
+    let candidate_base = normalize(&base_artist_credit(candidate));
+    if !source_base.is_empty() && source_base == candidate_base {
+        return true;
+    }
+    let source_lead = normalize(&lead_artist(source));
+    let candidate_lead = normalize(&lead_artist(candidate));
+    if source_lead == source_base && source_lead == candidate_lead {
+        return true;
+    }
+    false
 }
 
 fn artist_score(source: &str, candidate: &str) -> f64 {
     let source_full = normalize(source);
     let candidate_full = normalize(candidate);
-    strsim::jaro_winkler(&source_full, &candidate_full).max(strsim::jaro_winkler(
-        &normalize(primary_artist(source)),
-        &normalize(primary_artist(candidate)),
-    ))
+    let source_base = normalize(&base_artist_credit(source));
+    let candidate_base = normalize(&base_artist_credit(candidate));
+    let source_lead = normalize(&lead_artist(source));
+    let candidate_lead = normalize(&lead_artist(candidate));
+
+    if !source_base.is_empty() && source_base == candidate_base {
+        return 1.0;
+    }
+    let full_sim = strsim::jaro_winkler(&source_full, &candidate_full);
+    let base_sim = strsim::jaro_winkler(&source_base, &candidate_base);
+    let lead_sim = strsim::jaro_winkler(&source_lead, &candidate_lead);
+
+    full_sim.max(base_sim).max(lead_sim * 0.85)
 }
 
 fn clean_query_title(title: &str) -> String {
-    let pattern = regex::Regex::new(r"(?i)\s*[\[(](?:(?:official\s+)?(?:music\s+)?(?:video|audio|visualizer|lyric video)|explicit|(?:feat\.?|ft\.?|featuring)\s+[^\])]+)[\])]|\s*\|.*$").unwrap();
-    pattern.replace_all(title, "").trim().to_owned()
+    static PATTERN: OnceLock<regex::Regex> = OnceLock::new();
+    let re = PATTERN.get_or_init(|| {
+        regex::Regex::new(r"(?i)\s*[\[(](?:(?:official\s+)?(?:music\s+)?(?:video|audio|visualizer|lyric\s+video)|explicit|(?:feat\.?|ft\.?|featuring|with)\s+[^\])]+|bonus\s+track|deluxe(?:\s+edition|\s+version)?|remaster(?:ed)?(?:\s+\d{4})?|\d{4}\s+remaster(?:ed)?|album\s+version|single\s+version)[\])]").expect("constant regex")
+    });
+    static PIPE_PATTERN: OnceLock<regex::Regex> = OnceLock::new();
+    let pipe_re = PIPE_PATTERN.get_or_init(|| {
+        regex::Regex::new(r"\s*\|.*$").expect("constant regex")
+    });
+    let without_pipe = pipe_re.replace_all(title, "");
+    let mut cleaned = without_pipe.into_owned();
+    loop {
+        let next = re.replace_all(&cleaned, "").trim().to_owned();
+        if next == cleaned {
+            break;
+        }
+        cleaned = next;
+    }
+    cleaned
 }
 
 fn version_flags(title: &str) -> HashSet<&'static str> {
@@ -763,7 +823,6 @@ fn version_flags(title: &str) -> HashSet<&'static str> {
     [
         "live",
         "remix",
-        "remaster",
         "acoustic",
         "instrumental",
         "demo",
@@ -775,14 +834,48 @@ fn version_flags(title: &str) -> HashSet<&'static str> {
     .collect()
 }
 
+fn has_sequel_suffix(norm_title: &str) -> bool {
+    let words: Vec<&str> = norm_title.split_whitespace().collect();
+    if words.is_empty() {
+        return false;
+    }
+    let last = words[words.len() - 1];
+    if last.len() == 1 && last.chars().all(|c| c.is_ascii_digit()) && last != "1" && last != "0" {
+        return true;
+    }
+    if words.len() >= 2 {
+        let prev = words[words.len() - 2];
+        if (prev == "pt" || prev == "part")
+            && (last.chars().all(|c| c.is_ascii_digit())
+                || matches!(last, "ii" | "iii" | "iv" | "v" | "vi"))
+        {
+            return true;
+        }
+        if last.starts_with('v')
+            && last.len() > 1
+            && last[1..].chars().all(|c| c.is_ascii_digit())
+        {
+            return true;
+        }
+    }
+    false
+}
+
 fn rank_candidates(track: &GeniusTrackRecord, candidates: &mut Vec<GeniusCandidateRecord>) {
-    let title = normalize(&clean_query_title(&track.title));
+    let clean_title = clean_query_title(&track.title);
+    let title = normalize(&clean_title);
+    let track_has_sequel = has_sequel_suffix(&title);
     for candidate in candidates.iter_mut() {
         let candidate_title = normalize(&candidate.title);
         let title_score = if title_equivalent(&title, &candidate_title) {
             1.0
         } else {
-            strsim::jaro_winkler(&title, &candidate_title)
+            let sim = strsim::jaro_winkler(&title, &candidate_title);
+            if !track_has_sequel && has_sequel_suffix(&candidate_title) {
+                sim * 0.8
+            } else {
+                sim
+            }
         };
         let artist_score = artist_score(&track.artists, &candidate.artist);
         let version_ok = version_flags(&track.title) == version_flags(&candidate.title);
@@ -817,8 +910,10 @@ fn is_auto_match(track: &GeniusTrackRecord, candidates: &[GeniusCandidateRecord]
     // Search results do not reliably provide album or duration for disambiguation.
     if candidates.iter().skip(1).any(|candidate| {
         title_equivalent(&candidate.title, &first.title)
-            && normalize(primary_artist(&candidate.artist))
-                == normalize(primary_artist(&first.artist))
+            && (artist_credit_matches(&track.artists, &candidate.artist)
+                || (normalize(&lead_artist(&candidate.artist))
+                    == normalize(&lead_artist(&first.artist))
+                    && candidate.confidence >= 0.95))
     }) {
         return false;
     }
@@ -836,7 +931,7 @@ fn is_auto_match(track: &GeniusTrackRecord, candidates: &[GeniusCandidateRecord]
         || strsim::jaro_winkler(&title, &candidate_title) >= 0.92)
         && artist_credit_matches(&track.artists, &first.artist)
         && artist_score(&track.artists, &first.artist) >= 0.85
-        && margin >= 0.12
+        && (candidates.len() == 1 || margin >= 0.12)
 }
 
 fn text_from_dom(value: &Value) -> String {
@@ -963,7 +1058,7 @@ impl GeniusEngine {
         let result = self
             .db
             .get_genius_cache("lyrics", &song_id.to_string(), LYRICS_TTL)
-            .and_then(|json| serde_json::from_str(&json).ok());
+            .and_then(|json| read_cached_lyrics(&json));
         if result.is_some() {
             self.metrics.cache_hits.fetch_add(1, Ordering::Relaxed);
         }
@@ -1020,7 +1115,7 @@ impl GeniusEngine {
         let key = song_id.to_string();
         if !force {
             if let Some(json) = self.db.get_genius_cache("lyrics", &key, LYRICS_TTL) {
-                if let Ok(cached) = serde_json::from_str(&json) {
+                if let Some(cached) = read_cached_lyrics(&json) {
                     return Ok(cached);
                 }
             }
@@ -1045,7 +1140,10 @@ impl GeniusEngine {
                 message: "No Genius lyric containers found".into(),
             });
         }
-        if let Ok(data) = serde_json::to_string(&result) {
+        if let Ok(data) = serde_json::to_string(&CachedLyrics {
+            version: LYRICS_CACHE_VERSION,
+            lyrics: result.clone(),
+        }) {
             self.db.put_genius_cache("lyrics", &key, &data);
         }
         Ok(result)
@@ -1209,18 +1307,46 @@ struct LyricBuilder {
 
 impl LyricBuilder {
     fn flush(&mut self) {
-        let text = clean_text(&self.current);
+        let text = self.current.trim().to_owned();
         if !text.is_empty() && self.lines.len() < 1_000 {
+            let start = self.current.len() - self.current.trim_start().len();
+            let end = start + text.len();
+            let mut offset = 0;
+            let mut spans: Vec<GeniusLyricSpanRecord> = Vec::new();
+            for span in std::mem::take(&mut self.spans) {
+                let span_end = offset + span.text.len();
+                let kept_start = start.max(offset);
+                let kept_end = end.min(span_end);
+                if kept_start < kept_end {
+                    let kept_text =
+                        span.text[(kept_start - offset)..(kept_end - offset)].to_owned();
+                    if let Some(last) = spans.last_mut() {
+                        if last.referent_id == span.referent_id {
+                            last.text.push_str(&kept_text);
+                            offset = span_end;
+                            continue;
+                        }
+                    }
+                    spans.push(GeniusLyricSpanRecord {
+                        text: kept_text,
+                        referent_id: span.referent_id,
+                    });
+                }
+                offset = span_end;
+            }
+            debug_assert_eq!(
+                spans
+                    .iter()
+                    .map(|span| span.text.as_str())
+                    .collect::<String>(),
+                text
+            );
             let is_header = text.starts_with('[') && text.ends_with(']');
             self.lines.push(GeniusLyricLineRecord {
                 text,
-                referent_id: if is_header { None } else { self.referent_id },
+                referent_id: self.referent_id,
                 is_header,
-                spans: if is_header {
-                    Vec::new()
-                } else {
-                    std::mem::take(&mut self.spans)
-                },
+                spans,
             });
         }
         self.current.clear();
@@ -1233,9 +1359,9 @@ impl LyricBuilder {
             if index > 0 {
                 self.flush();
             }
-            if !part.trim().is_empty() {
+            if !part.is_empty() {
                 self.current.push_str(part);
-                if self.referent_id.is_none() {
+                if self.referent_id.is_none() && referent_id.is_some() {
                     self.referent_id = referent_id;
                 }
                 if let Some(last) = self.spans.last_mut() {
@@ -1374,6 +1500,55 @@ mod tests {
         assert_eq!(lines[1].referent_id, Some(123));
         assert!(lines[2].is_header);
         assert_eq!(lines[3].referent_id, None);
+    }
+
+    #[test]
+    fn compton_html_keeps_distinct_annotations_and_spaces() {
+        // Reduced from the two adjacent referent fragments in Genius's Compton HTML.
+        let html = r#"<div data-lyrics-container="true">
+          <a href="/123/Kendrick-lamar-compton/Produced-by-just-blaze"><span>[Produced by Just Blaze]</span></a><br>
+          <span>[Verse 1: Kendrick Lamar]</span><br>
+          <a href="/1104354/Kendrick-lamar-compton/And-the-chapter"><span>And the chapter that read at 25 I would live</span></a><span tabindex="0" style="position:absolute"></span> <a href="/1104195/Kendrick-lamar-compton/Dormant"><span>dormant like five in the morning</span></a><br>
+          Plain <a href="/55/annotation">marked</a> text
+        </div>"#;
+        let lines = parse_lyrics(html).lines;
+        assert_eq!(lines.len(), 4);
+        assert!(lines[0].is_header);
+        assert_eq!(lines[0].referent_id, Some(123));
+        assert_eq!(lines[0].spans[0].referent_id, Some(123));
+        assert_eq!(lines[1].referent_id, None);
+        assert_eq!(
+            lines[2].text,
+            "And the chapter that read at 25 I would live dormant like five in the morning"
+        );
+        assert_eq!(lines[2].spans[0].referent_id, Some(1104354));
+        assert_eq!(lines[2].spans[1].referent_id, None);
+        assert_eq!(lines[2].spans[2].referent_id, Some(1104195));
+        assert_eq!(lines[3].text, "Plain marked text");
+        for line in &lines {
+            assert_eq!(
+                line.spans
+                    .iter()
+                    .map(|span| span.text.as_str())
+                    .collect::<String>(),
+                line.text
+            );
+        }
+    }
+
+    #[test]
+    fn old_lyrics_cache_is_refetched() {
+        let lyrics = parse_lyrics("<div data-lyrics-container='true'>One line</div>");
+        assert!(read_cached_lyrics(&serde_json::to_string(&lyrics).unwrap()).is_none());
+        let current = serde_json::to_string(&CachedLyrics {
+            version: LYRICS_CACHE_VERSION,
+            lyrics: lyrics.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            read_cached_lyrics(&current).unwrap().lines[0].text,
+            "One line"
+        );
     }
 
     #[test]
@@ -1542,6 +1717,48 @@ mod tests {
                 "BEAUTY AND THE BEAST",
                 "Kanye West",
             ),
+            (
+                "Pain 1993 (feat. Playboi Carti)",
+                "Drake",
+                "Pain 1993",
+                "Drake (Ft. Playboi Carti)",
+            ),
+            (
+                "Rich Nigga Shit (feat. Young Thug)",
+                "21 Savage & Metro Boomin",
+                "Rich Nigga Shit",
+                "21 Savage & Metro Boomin (Ft. Young Thug)",
+            ),
+            (
+                "Wants and Needs (feat. Lil Baby)",
+                "Drake",
+                "Wants and Needs",
+                "Drake (Ft. Lil Baby)",
+            ),
+            (
+                "Feel The Fiyaaaah (feat. Takeoff)",
+                "Metro Boomin & A$AP Rocky",
+                "Feel The Fiyaaaah",
+                "Metro Boomin & A$AP Rocky (Ft. Takeoff)",
+            ),
+            (
+                "Take It Easy Freestyle",
+                "A$AP Rocky",
+                "Take It Easy Freestyle",
+                "A$AP Rocky (Ft. A$AP Ferg)",
+            ),
+            (
+                "Bohemian Rhapsody (Remastered 2011)",
+                "Queen",
+                "Bohemian Rhapsody",
+                "Queen",
+            ),
+            (
+                "Now Or Never (Bonus Track) (feat. Mary J. Blige)",
+                "Kendrick Lamar",
+                "Now or Never",
+                "Kendrick Lamar (Ft. Mary J. Blige)",
+            ),
         ];
         for (title, artists, genius_title, genius_artist) in cases {
             let track = track(title, artists);
@@ -1570,6 +1787,30 @@ mod tests {
         }];
         rank_candidates(&off, &mut unrelated);
         assert!(!is_auto_match(&off, &unrelated));
+    }
+
+    #[test]
+    fn original_track_beats_sequel_or_part_two() {
+        let track = track("Flashing Lights (feat. Dwele)", "Kanye West");
+        let mut candidates = vec![
+            GeniusCandidateRecord {
+                id: 9_246_747,
+                title: "Flashing Lights 2".into(),
+                artist: "Kanye West".into(),
+                url: None,
+                confidence: 0.0,
+            },
+            GeniusCandidateRecord {
+                id: 523,
+                title: "Flashing Lights".into(),
+                artist: "Kanye West (Ft. Dwele)".into(),
+                url: None,
+                confidence: 0.0,
+            },
+        ];
+        rank_candidates(&track, &mut candidates);
+        assert_eq!(candidates[0].id, 523);
+        assert!(is_auto_match(&track, &candidates));
     }
 
     #[test]
@@ -1603,6 +1844,14 @@ mod tests {
         assert_eq!(
             clean_query_title("Song (Live) [Official Video]"),
             "Song (Live)"
+        );
+        assert_eq!(
+            clean_query_title("Now Or Never (Bonus Track) (feat. Mary J. Blige)"),
+            "Now Or Never"
+        );
+        assert_eq!(
+            clean_query_title("Bohemian Rhapsody (Remastered 2011)"),
+            "Bohemian Rhapsody"
         );
         assert!(version_flags("Song (Live)").contains("live"));
     }

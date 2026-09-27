@@ -48,7 +48,7 @@ struct LibraryView: View {
                             .padding(.vertical, 8)
                             .foregroundStyle(libraryViewModel.selectedPageTab == tab ? Color.white : Color.primary)
                             .background(
-                                libraryViewModel.selectedPageTab == tab ? Color.white.opacity(0.16) : Color.primary.opacity(0.08),
+                                libraryViewModel.selectedPageTab == tab ? Color.sidebAccent : Color.primary.opacity(0.08),
                                 in: Capsule()
                             )
                     }

@@ -7,6 +7,7 @@ enum PageDestination: Equatable, Hashable {
     case search(query: String?)
     case album(browseId: String)
     case artist(browseId: String)
+    case catalog(browseId: String, params: String?, title: String)
     case playlist(browseId: String)
     case library
     case history
@@ -17,6 +18,7 @@ enum PageDestination: Equatable, Hashable {
         case .search: return .search
         case .album(let browseId): return .album(browseId: browseId)
         case .artist(let browseId): return .artist(channelId: browseId)
+        case .catalog(let browseId, _, _): return .artist(channelId: browseId)
         case .playlist(let browseId): return .playlist(id: browseId)
         case .library: return .library
         case .history: return .history

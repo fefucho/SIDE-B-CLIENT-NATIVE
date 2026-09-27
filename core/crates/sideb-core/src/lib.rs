@@ -265,6 +265,7 @@ pub struct AlbumDetailRecord {
     pub playlist_id: Option<String>,
     pub in_library: bool,
     pub items: Vec<SongItemRecord>,
+    pub sections: Vec<ArtistCarouselRecord>,
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -652,7 +653,20 @@ impl SideBCore {
             playlist_id: page.playlist_id,
             in_library: page.in_library,
             items: page.items.into_iter().map(SongItemRecord::from).collect(),
+            sections: page.sections.into_iter().map(ArtistCarouselRecord::from).collect(),
         })
+    }
+
+    /// Cards behind an artist carousel's "See all" browse endpoint.
+    pub async fn get_browse_grid(&self, browse_id: String, params: Option<String>) -> Result<Vec<BrowseCardRecord>, SideBError> {
+        let client = self.clients.get(METADATA_CLIENT).ok_or_else(|| SideBError::Other {
+            message: "Metadata client missing".into(),
+        })?;
+        let items = self.it.browse_grid(client, &browse_id, params.as_deref()).await?;
+        Ok(items.into_iter().map(|i| BrowseCardRecord {
+            kind: i.kind.to_string(), id: i.id, title: i.title,
+            subtitle: i.subtitle, thumbnail: i.thumbnail, duration: i.duration,
+        }).collect())
     }
 
     /// Fetch artist detail, top songs, and carousels by browseId (e.g. "UC...").
@@ -1815,4 +1829,3 @@ mod tests {
         assert_eq!(format_epoch_day(now - 2 * 86400, now), "Jueves");
     }
 }
-

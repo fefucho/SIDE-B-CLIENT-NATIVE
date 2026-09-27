@@ -57,7 +57,12 @@ struct AlbumDetailView: View {
                             },
                             onDislikeTrack: { track in
                                 playerViewModel.dislikeTrack(track)
-                            }
+                            },
+                            contentInsets: album.sections.isEmpty
+                                ? NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0)
+                                : NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0),
+                            footer: album.sections.isEmpty ? nil : AnyView(albumSectionsFooter(album)),
+                            footerHeight: CGFloat(album.sections.count) * 276 + 120
                         )
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -96,6 +101,37 @@ struct AlbumDetailView: View {
     }
 
     // MARK: - Subviews
+
+    private func albumSectionsFooter(_ album: AlbumDetailRecord) -> some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ForEach(Array(album.sections.enumerated()), id: \.offset) { _, section in
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(section.title)
+                        .font(.system(size: 20, weight: .bold))
+                        .padding(.horizontal, 32)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(alignment: .top, spacing: 16) {
+                            ForEach(section.items, id: \.id) { card in
+                                CatalogCardView(
+                                    card: card,
+                                    rustCore: rustCore,
+                                    playerViewModel: playerViewModel,
+                                    router: router,
+                                    artistBrowseId: album.artistId
+                                )
+                                .frame(width: 160)
+                            }
+                        }
+                        .padding(.horizontal, 32)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
     @ViewBuilder
     private func headerView(album: AlbumDetailRecord) -> some View {

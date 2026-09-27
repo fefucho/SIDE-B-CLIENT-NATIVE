@@ -353,7 +353,7 @@ struct SearchView: View {
                     .padding(.vertical, 5)
                     .background(
                         searchViewModel.selectedFilter == filter
-                            ? Color.white.opacity(0.16)
+                            ? Color.sidebAccent
                             : Color.white.opacity(0.08),
                         in: Capsule()
                     )

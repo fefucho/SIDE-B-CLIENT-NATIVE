@@ -20,6 +20,7 @@ public struct TrackTableSection: Sendable, Equatable {
 enum TableRowItem: Equatable {
     case header(title: String, sectionIndex: Int)
     case track(track: SongItemRecord, overallIndex: Int, sectionIndex: Int, itemIndex: Int)
+    case footer
 }
 
 /// Componente universal de lista de canciones de ultra-alto rendimiento respaldado por `NSTableView` de AppKit.
@@ -52,6 +53,8 @@ struct NativeTrackTableView: NSViewRepresentable {
     let onMoveTrack: ((Int, Int) -> Void)?
     let onNearBottom: (() -> Void)?
     let contentInsets: NSEdgeInsets
+    let footer: AnyView?
+    let footerHeight: CGFloat
 
     /// Inicializador principal que soporta múltiples secciones con encabezados de fecha/categoría.
     init(
@@ -74,7 +77,9 @@ struct NativeTrackTableView: NSViewRepresentable {
         onRemoveTrackFromPlaylist: (@MainActor @Sendable (SongItemRecord) -> Void)? = nil,
         onMoveTrack: ((Int, Int) -> Void)? = nil,
         onNearBottom: (() -> Void)? = nil,
-        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0)
+        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0),
+        footer: AnyView? = nil,
+        footerHeight: CGFloat = 0
     ) {
         self.sections = sections
         var allTracks: [SongItemRecord] = []
@@ -89,6 +94,7 @@ struct NativeTrackTableView: NSViewRepresentable {
                 items.append(.track(track: track, overallIndex: overallIdx, sectionIndex: sIdx, itemIndex: tIdx))
             }
         }
+        if footer != nil { items.append(.footer) }
         self.tracks = allTracks
         self.rowItems = items
         self.currentTrackVideoId = currentTrackVideoId
@@ -110,6 +116,8 @@ struct NativeTrackTableView: NSViewRepresentable {
         self.onMoveTrack = onMoveTrack
         self.onNearBottom = onNearBottom
         self.contentInsets = contentInsets
+        self.footer = footer
+        self.footerHeight = footerHeight
     }
 
     /// Inicializador de conveniencia para listas planas continuas (Playlists, Álbumes, Búsqueda, Cola).
@@ -133,7 +141,9 @@ struct NativeTrackTableView: NSViewRepresentable {
         onRemoveTrackFromPlaylist: (@MainActor @Sendable (SongItemRecord) -> Void)? = nil,
         onMoveTrack: ((Int, Int) -> Void)? = nil,
         onNearBottom: (() -> Void)? = nil,
-        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0)
+        contentInsets: NSEdgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 120, right: 0),
+        footer: AnyView? = nil,
+        footerHeight: CGFloat = 0
     ) {
         self.init(
             sections: [TrackTableSection(title: nil, tracks: tracks)],
@@ -155,7 +165,9 @@ struct NativeTrackTableView: NSViewRepresentable {
             onRemoveTrackFromPlaylist: onRemoveTrackFromPlaylist,
             onMoveTrack: onMoveTrack,
             onNearBottom: onNearBottom,
-            contentInsets: contentInsets
+            contentInsets: contentInsets,
+            footer: footer,
+            footerHeight: footerHeight
         )
     }
 
@@ -239,7 +251,7 @@ struct NativeTrackTableView: NSViewRepresentable {
         let activeTrackChanged = oldParent.currentTrackVideoId != currentTrackVideoId
         let isPlayingChanged = oldParent.isPlaying != isPlaying
         let likedChanged = oldParent.likedVideoIds != likedVideoIds
-        let rowHeightChanged = oldParent.rowHeight != rowHeight
+        let rowHeightChanged = oldParent.rowHeight != rowHeight || oldParent.footerHeight != footerHeight
 
         context.coordinator.update(parent: self)
         nsView.contentInsets = contentInsets
@@ -331,6 +343,7 @@ struct NativeTrackTableView: NSViewRepresentable {
         public func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
             guard row >= 0 && row < parent.rowItems.count else { return false }
             if case .header = parent.rowItems[row] { return false }
+            if case .footer = parent.rowItems[row] { return false }
             return true
         }
 
@@ -341,6 +354,8 @@ struct NativeTrackTableView: NSViewRepresentable {
                 return 38.0
             case .track:
                 return parent.rowHeight
+            case .footer:
+                return parent.footerHeight
             }
         }
 
@@ -363,6 +378,9 @@ struct NativeTrackTableView: NSViewRepresentable {
                     rowView?.identifier = identifier
                 }
                 return rowView
+
+            case .footer:
+                return NativeTrackGroupRowView()
 
             case .track(let track, _, _, _):
                 let identifier = NSUserInterfaceItemIdentifier("NativeTrackRowView")
@@ -433,6 +451,15 @@ struct NativeTrackTableView: NSViewRepresentable {
                     parent.onNearBottom?()
                 }
 
+                return cell
+
+            case .footer:
+                guard let footer = parent.footer else { return nil }
+                let identifier = NSUserInterfaceItemIdentifier("NativeTrackFooterCellView")
+                let cell = (tableView.makeView(withIdentifier: identifier, owner: self) as? NativeTrackFooterCellView)
+                    ?? NativeTrackFooterCellView()
+                cell.identifier = identifier
+                cell.configure(footer)
                 return cell
             }
         }
@@ -506,6 +533,7 @@ struct NativeTrackTableView: NSViewRepresentable {
         func isHeaderRow(_ row: Int) -> Bool {
             guard row >= 0 && row < parent.rowItems.count else { return false }
             if case .header = parent.rowItems[row] { return true }
+            if case .footer = parent.rowItems[row] { return true }
             return false
         }
 
@@ -536,6 +564,27 @@ struct NativeTrackTableView: NSViewRepresentable {
 }
 
 // MARK: - Native Track Table View Internal (Single Source of Truth for Hover)
+
+final class NativeTrackFooterCellView: NSTableCellView {
+    private var hosted: NSHostingView<AnyView>?
+
+    func configure(_ content: AnyView) {
+        if let hosted {
+            hosted.rootView = content
+            return
+        }
+        let hosted = NSHostingView(rootView: content)
+        hosted.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hosted)
+        NSLayoutConstraint.activate([
+            hosted.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hosted.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hosted.topAnchor.constraint(equalTo: topAnchor),
+            hosted.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        self.hosted = hosted
+    }
+}
 
 final class NativeTrackTableViewInternal: NSTableView {
     weak var coordinator: NativeTrackTableView.Coordinator?

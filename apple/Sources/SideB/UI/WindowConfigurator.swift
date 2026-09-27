@@ -41,6 +41,8 @@ final class WindowConfigurationView: NSView {
             self.configurationPending = false
             try? "configuration window=\(String(describing: self.window))".write(toFile: "/tmp/sideb-titlebar-diagnostic.txt", atomically: true, encoding: .utf8)
             guard let window = self.window else { return }
+            window.isOpaque = false
+            window.backgroundColor = .clear
             if !window.styleMask.contains(.fullSizeContentView) {
                 window.styleMask.insert(.fullSizeContentView)
             }

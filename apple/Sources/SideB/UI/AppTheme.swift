@@ -4,15 +4,14 @@ import AppKit
 // MARK: - AppTheme (Side B Design System)
 
 public enum AppTheme {
-    // MARK: - Refined Accent Palette (Apple Music macOS 26/27 Style #FA2D48)
-    /// Rojo frambuesa refinado oficial (#FA2D48), calibrado para interfaces oscuras y pantallas Liquid Retina XDR sin fatiga visual.
-    public static let accent = Color(red: 250/255, green: 45/255, blue: 72/255)
+    // MARK: - Acento discreto para superficies seleccionadas
+    /// Rojo suave mate (#A33D45): mantiene contraste con texto blanco sin dominar el contenido.
+    public static let accent = Color(red: 163/255, green: 61/255, blue: 69/255)
     
-    /// Rojo refinado en NSColor para componentes AppKit (NativeTrackTableView).
-    public static let nsAccent = NSColor(srgbRed: 250/255, green: 45/255, blue: 72/255, alpha: 1.0)
-    
-    /// Resplandor sutil para halos y elevación.
-    public static let accentGlow = Color(red: 250/255, green: 45/255, blue: 72/255).opacity(0.35)
+    public static let nsAccent = NSColor(srgbRed: 163/255, green: 61/255, blue: 69/255, alpha: 1.0)
+
+    /// Rojo A aclarado (#D06C70) para que los iconos y la línea de progreso sigan visibles sobre el cristal oscuro.
+    public static let accentHighlight = Color(red: 208/255, green: 108/255, blue: 112/255)
     
     // MARK: - Content surfaces
     /// Fondo oscuro suave: permite separar el contenido de la barra lateral translúcida.
@@ -44,8 +43,10 @@ public enum AppTheme {
 // MARK: - Color Extensions
 
 public extension Color {
-    /// Acento refinado Side B (#FA2D48).
+    /// Acento rojo suave mate para selecciones.
     static var sidebAccent: Color { AppTheme.accent }
+
+    static var sidebAccentHighlight: Color { AppTheme.accentHighlight }
     
     /// Fondo oscuro del área de contenido.
     static var sidebDarkBackground: Color { AppTheme.darkBackground }
@@ -64,7 +65,7 @@ public extension Color {
 // MARK: - NSColor Extensions
 
 public extension NSColor {
-    /// Acento refinado Side B en AppKit.
+    /// Acento rojo suave mate en AppKit.
     static var sidebAccent: NSColor { AppTheme.nsAccent }
     
     /// Fondo oscuro del área de contenido en AppKit.

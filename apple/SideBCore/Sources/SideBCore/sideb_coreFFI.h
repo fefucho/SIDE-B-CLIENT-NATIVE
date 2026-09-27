@@ -326,6 +326,11 @@ uint64_t uniffi_sideb_core_fn_method_sidebcore_get_artist(void*_Nonnull ptr, Rus
 uint64_t uniffi_sideb_core_fn_method_sidebcore_get_artist_json(void*_Nonnull ptr, RustBuffer browse_id
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_FN_METHOD_SIDEBCORE_GET_BROWSE_GRID
+#define UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_FN_METHOD_SIDEBCORE_GET_BROWSE_GRID
+uint64_t uniffi_sideb_core_fn_method_sidebcore_get_browse_grid(void*_Nonnull ptr, RustBuffer browse_id, RustBuffer params
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_FN_METHOD_SIDEBCORE_GET_COOKIE
 #define UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_FN_METHOD_SIDEBCORE_GET_COOKIE
 RustBuffer uniffi_sideb_core_fn_method_sidebcore_get_cookie(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
@@ -930,6 +935,12 @@ uint16_t uniffi_sideb_core_checksum_method_sidebcore_get_artist(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_CHECKSUM_METHOD_SIDEBCORE_GET_ARTIST_JSON
 #define UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_CHECKSUM_METHOD_SIDEBCORE_GET_ARTIST_JSON
 uint16_t uniffi_sideb_core_checksum_method_sidebcore_get_artist_json(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_CHECKSUM_METHOD_SIDEBCORE_GET_BROWSE_GRID
+#define UNIFFI_FFIDEF_UNIFFI_SIDEB_CORE_CHECKSUM_METHOD_SIDEBCORE_GET_BROWSE_GRID
+uint16_t uniffi_sideb_core_checksum_method_sidebcore_get_browse_grid(void
     
 );
 #endif

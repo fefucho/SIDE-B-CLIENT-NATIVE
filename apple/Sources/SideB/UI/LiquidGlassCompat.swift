@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - CompatGlassTransition
@@ -154,9 +155,19 @@ public struct CompatTranslucentSidebarModifier: ViewModifier {
         content
             .scrollContentBackground(.hidden)
             .background {
-                Rectangle()
-                    .fill(.regularMaterial)
-                    .overlay(AppTheme.sidebarBackground.opacity(0.18))
+                SidebarVisualEffect()
             }
     }
+}
+
+private struct SidebarVisualEffect: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

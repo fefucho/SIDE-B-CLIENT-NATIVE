@@ -99,7 +99,7 @@ struct PlayerBarView: View {
 
                 // Rail transcurrido (Acento Side B calibrado)
                 Capsule()
-                    .fill(Color.white)
+                    .fill(Color.sidebAccentHighlight)
                     .frame(width: max(0, fillWidth), height: isHoveringScrubber ? 3.5 : 2.5)
 
                 // Cabezal Playhead Vertical (píldora vertical de precisión)
@@ -142,7 +142,7 @@ struct PlayerBarView: View {
             } label: {
                 Image(systemName: "shuffle")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(viewModel.queueManager.isShuffle ? Color.white : Color.white.opacity(0.60))
+                    .foregroundStyle(viewModel.queueManager.isShuffle ? Color.sidebAccentHighlight : Color.white.opacity(0.60))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -175,22 +175,31 @@ struct PlayerBarView: View {
                     viewModel.togglePlayPause()
                 }
             } label: {
-                Group {
-                    if viewModel.isBuffering {
-                        ProgressView()
-                            .scaleEffect(0.70)
-                    } else if viewModel.errorMessage != nil {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Color.yellow)
-                    } else {
-                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundStyle(viewModel.currentTrack == nil ? Color.white.opacity(0.30) : Color.white)
-                            .offset(x: viewModel.isPlaying ? 0 : 1)
+                ZStack {
+                    if viewModel.currentTrack != nil && viewModel.errorMessage == nil {
+                        Circle()
+                            .fill(Color.sidebAccent)
+                            .frame(width: 38, height: 38)
+                    }
+
+                    Group {
+                        if viewModel.isBuffering {
+                            ProgressView()
+                                .scaleEffect(0.70)
+                                .tint(.white)
+                        } else if viewModel.errorMessage != nil {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 18, weight: .bold))
+                                .foregroundStyle(Color.yellow)
+                        } else {
+                            Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(viewModel.currentTrack == nil ? Color.white.opacity(0.30) : Color.white)
+                                .offset(x: viewModel.isPlaying ? 0 : 1)
+                        }
                     }
                 }
-                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -217,7 +226,7 @@ struct PlayerBarView: View {
             } label: {
                 Image(systemName: "repeat")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(viewModel.queueManager.isRepeat ? Color.white : Color.white.opacity(0.60))
+                    .foregroundStyle(viewModel.queueManager.isRepeat ? Color.sidebAccentHighlight : Color.white.opacity(0.60))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -363,7 +372,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: viewModel.isCurrentTrackLiked ? "heart.fill" : "heart")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.white : Color.white.opacity(0.60))
+                .foregroundStyle(viewModel.isCurrentTrackLiked ? Color.sidebAccentHighlight : Color.white.opacity(0.60))
                 .frame(width: 22, height: 22)
                 .contentShape(Rectangle())
         }
@@ -411,7 +420,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: (viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && !viewModel.isShowingGeniusLyrics) ? "quote.bubble.fill" : "quote.bubble")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && !viewModel.isShowingGeniusLyrics) ? Color.white : Color.white.opacity(0.70))
+                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .lyrics && !viewModel.isShowingGeniusLyrics) ? Color.sidebAccentHighlight : Color.white.opacity(0.70))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
@@ -426,7 +435,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: active ? "text.book.closed.fill" : "text.book.closed")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(active ? Color.white : Color.white.opacity(0.70))
+                .foregroundStyle(active ? Color.sidebAccentHighlight : Color.white.opacity(0.70))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
@@ -442,7 +451,7 @@ struct PlayerBarView: View {
         } label: {
             Image(systemName: (viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? "list.bullet.indent" : "list.bullet")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? Color.white : Color.white.opacity(0.70))
+                .foregroundStyle((viewModel.isFullscreenPresented && viewModel.selectedFullscreenPanel == .queue) ? Color.sidebAccentHighlight : Color.white.opacity(0.70))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }

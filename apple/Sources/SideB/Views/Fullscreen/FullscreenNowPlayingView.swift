@@ -541,9 +541,8 @@ struct FullscreenNowPlayingView: View {
                     .background {
                         if selectedPanel == panel {
                             Capsule()
-                                .fill(Color.white)
+                                .fill(Color.sidebAccent)
                                 .matchedGeometryEffect(id: "fullscreenTabIndicator", in: tabNamespace)
-                                .shadow(color: Color.white.opacity(0.22), radius: 6, x: 0, y: 2)
                         }
                     }
                     .contentShape(Capsule())

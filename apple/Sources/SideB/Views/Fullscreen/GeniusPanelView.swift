@@ -495,6 +495,7 @@ final class GeniusLyricsScrollView: NSScrollView {
         }
         super.scrollWheel(with: event)
     }
+
 }
 
 @MainActor
@@ -511,6 +512,12 @@ final class GeniusLyricsNSTextView: NSTextView {
             return
         }
         super.scrollWheel(with: event)
+    }
+
+    override func resetCursorRects() {
+        // Keep text selection through NSTextView.mouseDown, but present an arrow while hovering.
+        // Register the cursor once with AppKit instead of racing its I-beam on every mouse move.
+        addCursorRect(visibleRect, cursor: .arrow)
     }
 
     override func updateTrackingAreas() {
@@ -539,12 +546,102 @@ final class GeniusLyricsNSTextView: NSTextView {
         updateHoverHighlight(nil)
     }
 
+    override func draw(_ dirtyRect: NSRect) {
+        guard let layoutManager, let textContainer else {
+            super.draw(dirtyRect)
+            return
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let visibleGlyphs = layoutManager.glyphRange(
+            forBoundingRect: dirtyRect.offsetBy(dx: -textContainerOrigin.x, dy: -textContainerOrigin.y),
+            in: textContainer
+        )
+        let visibleCharacters = layoutManager.characterRange(
+            forGlyphRange: visibleGlyphs, actualGlyphRange: nil
+        )
+        for (id, ranges) in referentRanges {
+            let color: NSColor
+            if id == selectedReferentId {
+                color = NSColor.sidebAccent.withAlphaComponent(0.48)
+            } else if id == hoveredReferentId {
+                color = NSColor.white.withAlphaComponent(0.28)
+            } else {
+                color = NSColor.white.withAlphaComponent(0.16)
+            }
+            color.setFill()
+            for range in ranges where NSIntersectionRange(range, visibleCharacters).length > 0 {
+                for rect in highlightRects(for: range, layoutManager: layoutManager, textContainer: textContainer)
+                where rect.intersects(dirtyRect) {
+                    NSBezierPath(rect: rect).fill()
+                }
+            }
+        }
+        super.draw(dirtyRect)
+    }
+
+    func annotationHighlightRects(for id: Int64) -> [NSRect] {
+        guard let layoutManager, let textContainer, let ranges = referentRanges[id] else { return [] }
+        layoutManager.ensureLayout(for: textContainer)
+        return ranges.flatMap { highlightRects(for: $0, layoutManager: layoutManager, textContainer: textContainer) }
+    }
+
+    private func highlightRects(
+        for range: NSRange,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> [NSRect] {
+        guard range.length > 0, let textStorage else { return [] }
+        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return [] }
+        let string = textStorage.string as NSString
+        let origin = textContainerOrigin
+        var rects: [NSRect] = []
+
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, lineRange, _ in
+            let intersection = NSIntersectionRange(glyphRange, lineRange)
+            guard intersection.length > 0 else { return }
+            var first = intersection.location
+            var last = NSMaxRange(intersection) - 1
+            while first <= last, self.isWhitespaceGlyph(first, in: string, layoutManager: layoutManager) {
+                first += 1
+            }
+            while last >= first, self.isWhitespaceGlyph(last, in: string, layoutManager: layoutManager) {
+                last -= 1
+            }
+            guard first <= last else { return }
+
+            let firstRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: first, length: 1), in: textContainer
+            )
+            let lastRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: last, length: 1), in: textContainer
+            )
+            let left = max(firstRect.minX, usedRect.minX) + origin.x + 1
+            let right = min(lastRect.maxX, usedRect.maxX) + origin.x - 1
+            let top = usedRect.minY + origin.y + 1
+            let height = usedRect.height - 2
+            guard right > left, height > 0 else { return }
+            rects.append(NSRect(x: left, y: top, width: right - left, height: height))
+        }
+        return rects
+    }
+
+    private func isWhitespaceGlyph(
+        _ glyph: Int,
+        in string: NSString,
+        layoutManager: NSLayoutManager
+    ) -> Bool {
+        let character = layoutManager.characterIndexForGlyph(at: glyph)
+        guard character < string.length else { return true }
+        guard let scalar = UnicodeScalar(string.character(at: character)) else { return false }
+        return CharacterSet.whitespacesAndNewlines.contains(scalar)
+    }
+
     private func checkHover(at point: NSPoint) {
         if isScrollLocked {
             return
         }
-        // NSTextView owns the selection cursor. Only update annotation styling here;
-        // setting NSCursor on every move races AppKit's cursor rectangles and flickers.
+        // Cursor rectangles own the pointer; this path only updates annotation styling.
         guard let layoutManager,
               let textContainer,
               let textStorage else {
@@ -552,11 +649,12 @@ final class GeniusLyricsNSTextView: NSTextView {
             return
         }
 
-        let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
+        let containerPoint = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
         let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
 
-        guard glyphRect.contains(point), charIndex < textStorage.length else {
+        guard glyphRect.contains(containerPoint), charIndex < textStorage.length else {
             updateHoverHighlight(nil)
             return
         }
@@ -574,6 +672,12 @@ final class GeniusLyricsNSTextView: NSTextView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
+        if selectAnnotation(at: point) { return }
+        super.mouseDown(with: event)
+    }
+
+    @discardableResult
+    func selectAnnotation(at point: NSPoint) -> Bool {
         if let (referentId, rect) = hitTestReferent(at: point) {
             let convertedRect: CGRect
             if let scrollView = enclosingScrollView {
@@ -582,25 +686,27 @@ final class GeniusLyricsNSTextView: NSTextView {
                 convertedRect = rect
             }
             onSelectAnnotation?(referentId, convertedRect)
-            return
+            return true
         }
-        super.mouseDown(with: event)
+        return false
     }
 
-    private func hitTestReferent(at point: NSPoint) -> (Int64, NSRect)? {
+    func hitTestReferent(at point: NSPoint) -> (Int64, NSRect)? {
         guard let layoutManager,
               let textContainer,
               let textStorage else { return nil }
 
-        let glyphIndex = layoutManager.glyphIndex(for: point, in: textContainer)
+        let containerPoint = NSPoint(x: point.x - textContainerOrigin.x, y: point.y - textContainerOrigin.y)
+        let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
         let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
         let glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
-        guard glyphRect.contains(point), charIndex < textStorage.length else { return nil }
+        guard glyphRect.contains(containerPoint), charIndex < textStorage.length else { return nil }
 
         for (referentId, ranges) in referentRanges {
             for range in ranges {
                 if NSLocationInRange(charIndex, range) {
-                    let rect = layoutManager.boundingRect(forGlyphRange: range, in: textContainer)
+                    let rect = highlightRects(for: range, layoutManager: layoutManager, textContainer: textContainer)
+                        .first(where: { $0.contains(point) }) ?? glyphRect.offsetBy(dx: textContainerOrigin.x, dy: textContainerOrigin.y)
                     return (referentId, rect)
                 }
             }
@@ -620,51 +726,12 @@ final class GeniusLyricsNSTextView: NSTextView {
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.paragraphSpacingBefore = (index == 0) ? 4 : 18
                 paragraph.paragraphSpacing = 6
-
-                let headerAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 16, weight: .bold),
-                    .foregroundColor: NSColor.white,
-                    .paragraphStyle: paragraph
-                ]
-                fullString.append(NSAttributedString(string: line.text + "\n", attributes: headerAttrs))
+                appendLine(line, to: fullString, font: .systemFont(ofSize: 16, weight: .bold), paragraph: paragraph)
             } else {
                 let paragraph = NSMutableParagraphStyle()
                 paragraph.lineSpacing = 5
                 paragraph.paragraphSpacing = 7
-
-                let spans = line.spans.isEmpty
-                    ? [GeniusLyricSpanRecord(text: line.text, referentId: line.referentId)]
-                    : line.spans
-
-                for span in spans {
-                    guard !span.text.isEmpty else { continue }
-                    let startLoc = fullString.length
-                    var spanAttrs: [NSAttributedString.Key: Any] = [
-                        .font: NSFont.systemFont(ofSize: 20, weight: .semibold),
-                        .paragraphStyle: paragraph
-                    ]
-
-                    if let id = span.referentId {
-                        let isSelected = (id == selectedReferentId)
-                        spanAttrs[.backgroundColor] = isSelected
-                            ? NSColor.sidebAccent.withAlphaComponent(0.48)
-                            : NSColor.sidebAccent.withAlphaComponent(0.12)
-                        spanAttrs[.foregroundColor] = isSelected
-                            ? NSColor.white
-                            : NSColor.white.withAlphaComponent(0.92)
-
-                        fullString.append(NSAttributedString(string: span.text, attributes: spanAttrs))
-                        let spanRange = NSRange(location: startLoc, length: fullString.length - startLoc)
-                        self.referentRanges[id, default: []].append(spanRange)
-                    } else {
-                        spanAttrs[.foregroundColor] = NSColor.white.withAlphaComponent(0.85)
-                        fullString.append(NSAttributedString(string: span.text, attributes: spanAttrs))
-                    }
-                }
-                fullString.append(NSAttributedString(string: "\n", attributes: [
-                    .font: NSFont.systemFont(ofSize: 20, weight: .semibold),
-                    .paragraphStyle: paragraph
-                ]))
+                appendLine(line, to: fullString, font: .systemFont(ofSize: 20, weight: .semibold), paragraph: paragraph)
             }
         }
 
@@ -672,49 +739,40 @@ final class GeniusLyricsNSTextView: NSTextView {
         needsDisplay = true
     }
 
+    private func appendLine(
+        _ line: GeniusLyricLineRecord,
+        to fullString: NSMutableAttributedString,
+        font: NSFont,
+        paragraph: NSParagraphStyle
+    ) {
+        let spans = line.spans.isEmpty
+            ? [GeniusLyricSpanRecord(text: line.text, referentId: line.referentId)]
+            : line.spans
+        for span in spans where !span.text.isEmpty {
+            let start = fullString.length
+            fullString.append(NSAttributedString(string: span.text, attributes: [
+                .font: font,
+                .foregroundColor: NSColor.white.withAlphaComponent(span.referentId == nil ? 0.85 : 0.95),
+                .paragraphStyle: paragraph
+            ]))
+            if let id = span.referentId {
+                referentRanges[id, default: []].append(NSRange(location: start, length: fullString.length - start))
+            }
+        }
+        fullString.append(NSAttributedString(string: "\n", attributes: [
+            .font: font,
+            .paragraphStyle: paragraph
+        ]))
+    }
+
     func updateSelectedReferent(_ newSelectedId: Int64?) {
-        let oldSelectedId = self.selectedReferentId
         self.selectedReferentId = newSelectedId
-        refreshReferentStyle(oldSelectedId)
-        refreshReferentStyle(newSelectedId)
+        needsDisplay = true
     }
 
     private func updateHoverHighlight(_ newHoverId: Int64?) {
         guard newHoverId != hoveredReferentId else { return }
-        let oldHoverId = self.hoveredReferentId
         self.hoveredReferentId = newHoverId
-        refreshReferentStyle(oldHoverId)
-        refreshReferentStyle(newHoverId)
-    }
-
-    private func refreshReferentStyle(_ id: Int64?) {
-        guard let id, let ranges = referentRanges[id], let storage = textStorage else { return }
-        let isSelected = (id == selectedReferentId)
-        let isHovered = (id == hoveredReferentId)
-
-        let bgColor: NSColor
-        let fgColor: NSColor
-
-        if isSelected {
-            bgColor = NSColor.sidebAccent.withAlphaComponent(0.48)
-            fgColor = NSColor.white
-        } else if isHovered {
-            bgColor = NSColor.sidebAccent.withAlphaComponent(0.38)
-            fgColor = NSColor.white
-        } else {
-            bgColor = NSColor.sidebAccent.withAlphaComponent(0.12)
-            fgColor = NSColor.white.withAlphaComponent(0.92)
-        }
-
-        storage.beginEditing()
-        for range in ranges {
-            guard range.location + range.length <= storage.length else { continue }
-            storage.addAttributes([
-                .backgroundColor: bgColor,
-                .foregroundColor: fgColor
-            ], range: range)
-        }
-        storage.endEditing()
         needsDisplay = true
     }
 }

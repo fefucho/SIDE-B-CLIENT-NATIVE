@@ -578,6 +578,11 @@ public protocol SideBCoreProtocol : AnyObject {
      */
     func getArtistJson(browseId: String) async throws  -> String
     
+    /**
+     * Cards behind an artist carousel's "See all" browse endpoint.
+     */
+    func getBrowseGrid(browseId: String, params: String?) async throws  -> [BrowseCardRecord]
+    
     func getCookie()  -> String?
     
     func getGeniusAnnotations(songId: Int64, page: UInt32, force: Bool) async throws  -> GeniusAnnotationsRecord
@@ -1071,6 +1076,26 @@ open func getArtistJson(browseId: String)async throws  -> String {
             completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
             freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
             liftFunc: FfiConverterString.lift,
+            errorHandler: FfiConverterTypeSideBError.lift
+        )
+}
+    
+    /**
+     * Cards behind an artist carousel's "See all" browse endpoint.
+     */
+open func getBrowseGrid(browseId: String, params: String?)async throws  -> [BrowseCardRecord] {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_sideb_core_fn_method_sidebcore_get_browse_grid(
+                    self.uniffiClonePointer(),
+                    FfiConverterString.lower(browseId),FfiConverterOptionString.lower(params)
+                )
+            },
+            pollFunc: ffi_sideb_core_rust_future_poll_rust_buffer,
+            completeFunc: ffi_sideb_core_rust_future_complete_rust_buffer,
+            freeFunc: ffi_sideb_core_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeBrowseCardRecord.lift,
             errorHandler: FfiConverterTypeSideBError.lift
         )
 }
@@ -2118,10 +2143,11 @@ public struct AlbumDetailRecord {
     public var playlistId: String?
     public var inLibrary: Bool
     public var items: [SongItemRecord]
+    public var sections: [ArtistCarouselRecord]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(browseId: String, title: String, artist: String?, artistId: String?, subtitle: String?, secondSubtitle: String?, description: String?, thumbnail: String?, playlistId: String?, inLibrary: Bool, items: [SongItemRecord]) {
+    public init(browseId: String, title: String, artist: String?, artistId: String?, subtitle: String?, secondSubtitle: String?, description: String?, thumbnail: String?, playlistId: String?, inLibrary: Bool, items: [SongItemRecord], sections: [ArtistCarouselRecord]) {
         self.browseId = browseId
         self.title = title
         self.artist = artist
@@ -2133,6 +2159,7 @@ public struct AlbumDetailRecord {
         self.playlistId = playlistId
         self.inLibrary = inLibrary
         self.items = items
+        self.sections = sections
     }
 }
 
@@ -2173,6 +2200,9 @@ extension AlbumDetailRecord: Equatable, Hashable {
         if lhs.items != rhs.items {
             return false
         }
+        if lhs.sections != rhs.sections {
+            return false
+        }
         return true
     }
 
@@ -2188,6 +2218,7 @@ extension AlbumDetailRecord: Equatable, Hashable {
         hasher.combine(playlistId)
         hasher.combine(inLibrary)
         hasher.combine(items)
+        hasher.combine(sections)
     }
 }
 
@@ -2209,7 +2240,8 @@ public struct FfiConverterTypeAlbumDetailRecord: FfiConverterRustBuffer {
                 thumbnail: FfiConverterOptionString.read(from: &buf), 
                 playlistId: FfiConverterOptionString.read(from: &buf), 
                 inLibrary: FfiConverterBool.read(from: &buf), 
-                items: FfiConverterSequenceTypeSongItemRecord.read(from: &buf)
+                items: FfiConverterSequenceTypeSongItemRecord.read(from: &buf), 
+                sections: FfiConverterSequenceTypeArtistCarouselRecord.read(from: &buf)
         )
     }
 
@@ -2225,6 +2257,7 @@ public struct FfiConverterTypeAlbumDetailRecord: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.playlistId, into: &buf)
         FfiConverterBool.write(value.inLibrary, into: &buf)
         FfiConverterSequenceTypeSongItemRecord.write(value.items, into: &buf)
+        FfiConverterSequenceTypeArtistCarouselRecord.write(value.sections, into: &buf)
     }
 }
 
@@ -6091,6 +6124,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_get_artist_json() != 59144) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_sideb_core_checksum_method_sidebcore_get_browse_grid() != 45993) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_sideb_core_checksum_method_sidebcore_get_cookie() != 6201) {

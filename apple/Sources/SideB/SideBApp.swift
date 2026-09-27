@@ -207,6 +207,16 @@ struct WindowRootView: View {
                                 router: router
                             )
                             .id(id)
+                        case .catalog(let id, let params, let title):
+                            ArtistCatalogView(
+                                browseId: id,
+                                params: params,
+                                title: title,
+                                rustCore: rustCore,
+                                playerViewModel: playerViewModel,
+                                router: router
+                            )
+                            .id("\(id)|\(params ?? "")")
                         case .history:
                             HistoryView(
                                 rustCore: rustCore,
@@ -243,6 +253,7 @@ struct WindowRootView: View {
                             )
                         }
                     }
+                    .padding(.top, !isSidebarExpanded && !playerViewModel.isFullscreenPresented ? 40 : 0)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                     // Cápsula Flotante de Navegación (Refresh + Back / Forward) en la DERECHA
@@ -288,6 +299,7 @@ struct WindowRootView: View {
                     .zIndex(200)
                 }
             }
+            .background(Color.sidebDarkBackground)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
             .ignoresSafeArea(.container, edges: isSidebarExpanded ? .top : [])
@@ -303,7 +315,6 @@ struct WindowRootView: View {
             .allowsHitTesting(false)
         }
         .frame(minWidth: 960, minHeight: 640)
-        .background(Color.sidebDarkBackground)
         .background(WindowConfigurator(isFullscreenPresented: playerViewModel.isFullscreenPresented))
         .background(
             WindowNavigationGestureBridge(

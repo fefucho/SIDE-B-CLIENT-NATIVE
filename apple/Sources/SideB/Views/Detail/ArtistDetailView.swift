@@ -289,6 +289,7 @@ struct ArtistDetailView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Ver todas las canciones principales")
                 }
             }
 
@@ -419,17 +420,16 @@ struct ArtistDetailView: View {
 
                 if let moreBrowseId = section.moreBrowseId, !moreBrowseId.isEmpty {
                     Button("Ver todo") {
-                        if moreBrowseId.starts(with: "MPRE") {
-                            router?.navigate(to: .album(browseId: moreBrowseId))
-                        } else if moreBrowseId.starts(with: "UC") {
-                            router?.navigate(to: .artist(browseId: moreBrowseId))
-                        } else {
-                            router?.navigate(to: .playlist(browseId: moreBrowseId))
-                        }
+                        router?.navigate(to: .catalog(
+                            browseId: moreBrowseId,
+                            params: section.moreParams,
+                            title: section.title
+                        ))
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Ver todo: \(section.title)")
                 }
             }
             .padding(.horizontal, 32)

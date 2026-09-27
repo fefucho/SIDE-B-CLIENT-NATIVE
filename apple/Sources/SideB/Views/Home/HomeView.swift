@@ -91,7 +91,7 @@ struct HomeView: View {
         .foregroundStyle(selected ? Color.white : Color.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
-        .background(selected ? Color.white.opacity(0.16) : Color.primary.opacity(0.07), in: Capsule())
+        .background(selected ? Color.sidebAccent : Color.primary.opacity(0.07), in: Capsule())
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
