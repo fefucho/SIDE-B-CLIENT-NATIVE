@@ -1134,14 +1134,11 @@ final class NativeTrackCellView: NSTableCellView {
         // Carga en segundo plano fuera de SwiftUI
         let expectedVideoId = track.videoId
         imageFetchTask?.cancel()
-        imageFetchTask = Task(priority: .utility) { [weak self] in
+        imageFetchTask = Task(priority: .utility) { @MainActor [weak self] in
             let loaded = await ImageCache.shared.image(for: url, targetSize: targetSize)
             guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                guard let self, self.currentVideoId == expectedVideoId else { return }
-                self.artworkImageView.image = loaded
-            }
+            guard let self, self.currentVideoId == expectedVideoId else { return }
+            self.artworkImageView.image = loaded
         }
     }
 }

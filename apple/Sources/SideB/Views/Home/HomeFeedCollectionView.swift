@@ -1192,13 +1192,11 @@ final class HomeItemView: NSView {
             return
         }
         let expectedGeneration = generation
-        imageTask = Task(priority: .utility) { [weak self] in
+        imageTask = Task(priority: .utility) { @MainActor [weak self] in
             let image = await ImageCache.shared.image(for: url, targetSize: target)
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, self.generation == expectedGeneration else { return }
-                self.cover.image = image
-            }
+            guard let self, self.generation == expectedGeneration else { return }
+            self.cover.image = image
         }
     }
 

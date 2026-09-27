@@ -41,5 +41,6 @@ let package = Package(
             dependencies: ["SideB", "SideBCore"],
             path: "Tests/SideBTests"
         )
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

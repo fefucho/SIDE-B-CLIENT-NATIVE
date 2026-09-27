@@ -269,7 +269,7 @@ struct HomeFeedTableView: NSViewRepresentable {
             case "song":
                 parent.player.playWithRadio(SongItemRecord(fromHomeItem: record))
             case "album":
-                Task {
+                Task { @MainActor in
                     guard let core = parent.player.rustCore,
                           let album = try? await core.getAlbum(browseId: record.id),
                           !album.items.isEmpty else { return }
@@ -283,7 +283,7 @@ struct HomeFeedTableView: NSViewRepresentable {
                 }
             case "playlist":
                 let canonicalId = MenuIDNormalizer.canonicalPlaylistId(record.id)
-                Task {
+                Task { @MainActor in
                     guard let core = parent.player.rustCore,
                           let pl = try? await core.getPlaylist(playlistId: canonicalId),
                           !pl.items.isEmpty else { return }
