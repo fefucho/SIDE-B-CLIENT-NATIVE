@@ -61,3 +61,9 @@ swift test --package-path apple
 - [**Planes y Epics**](plans/README.md): Registro oficial de epics estructurales y roadmaps de producto.
 - [**Registro de Fixes**](documentation/FIXES_LOG.md): Bitácora técnica continua de correcciones y mejoras.
 - [**Auditorías y Reportes**](documentation/audits/README.md): Archivo histórico de optimizaciones de scroll y diagnósticos forenses.
+
+## 🙏 Agradecimientos y Créditos
+
+Side B es posible gracias al software de código abierto y a proyectos excepcionales que allanaron el camino:
+
+- **[Limusic](https://github.com/SimoHypers/limusic)** (creado por [SimoHypers](https://github.com/SimoHypers)): La base del backend en Rust (`core`), la integración con la API de InnerTube (YouTube Music), la lógica de resolución de streams y cipher, el soporte de PoToken y los esquemas de persistencia local en SQLite están fundamentados y adaptados de la arquitectura desarrollada originalmente en el proyecto Limusic. ¡Muchas gracias por su valioso trabajo en la comunidad de código abierto!

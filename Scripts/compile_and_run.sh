@@ -69,6 +69,12 @@ else
     echo "⚠️  Sin ícono: pon tu AppIcon.icns en apple/Resources/ para incluirlo."
 fi
 
+# Créditos de la app (Acerca de Side B)
+CREDITS_SRC="$SCRIPT_DIR/../apple/Resources/Credits.rtf"
+if [ -f "$CREDITS_SRC" ]; then
+    cp "$CREDITS_SRC" "$RESOURCES_DIR/Credits.rtf"
+fi
+
 # Creamos un Info.plist básico
 cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

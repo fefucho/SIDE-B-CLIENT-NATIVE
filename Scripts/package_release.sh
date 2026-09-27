@@ -24,6 +24,10 @@ if [ -f "Resources/AppIcon.icns" ]; then
     <string>AppIcon</string>"
 fi
 
+if [ -f "Resources/Credits.rtf" ]; then
+  cp "Resources/Credits.rtf" "$RESOURCES_DIR/Credits.rtf"
+fi
+
 RAW_TAG="${1:-${GITHUB_REF_NAME:-v1.0.0}}"
 CLEAN_VERSION="${RAW_TAG#v}"
 BUILD_NUM="${GITHUB_RUN_NUMBER:-1}"

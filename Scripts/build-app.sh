@@ -251,6 +251,11 @@ if [[ -f "$ICON_ICNS" ]]; then
   cp "$ICON_ICNS" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
 
+CREDITS_RTF="$ROOT/apple/Resources/Credits.rtf"
+if [[ -f "$CREDITS_RTF" ]]; then
+  cp "$CREDITS_RTF" "$APP_BUNDLE/Contents/Resources/Credits.rtf"
+fi
+
 # ── Executable ───────────────────────────────────────────────────────────────
 
 install_binary "$SWIFT_PRODUCT" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
