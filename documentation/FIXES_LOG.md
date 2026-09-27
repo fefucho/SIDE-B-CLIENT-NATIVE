@@ -2666,3 +2666,21 @@
 - **Archivos Modificados**: `core/crates/sideb-core/src/genius.rs`, `documentation/FIXES_LOG.md`.
 - **Verificación**: `cargo test -p sideb-core`: 79 pruebas unitarias aprobadas (incluyendo 8 casos nuevos del corpus de reportes y desempate de secuela); `live_resolution_matrix` en vivo aprobada con `Starboy`, `Runaway` y `Bohemian Rhapsody` resolviendo con confianza 1.0; `SideBCore.xcframework` reconstruido; `swift test --package-path apple`: 66 pruebas aprobadas en 5 suites; `Scripts/compile_and_run.sh` ejecutado con éxito y la app `SideB` lanzada y activa (PID 83959).
 
+---
+
+### [FIX-082] - Nombre de bundle 'Side B', sanitización de diálogo Keychain e instalación sin Gatekeeper
+- **Fecha**: 2026-09-27 20:20 (GMT-3)
+- **Agente / Rol**: Swift / macOS Build & Release
+- **Componente**: `CookieStorage`, `compile_and_run.sh`, `package_release.sh`, `install.sh`, `README.md`
+- **Problema / Causa Raíz**: 
+  1. La app se empaquetaba como `SideB.app` y con ejecutable `SideB` en `compile_and_run.sh` y `package_release.sh`, provocando que en el Dock, Monitor de Actividad y diálogos de seguridad de macOS apareciera pegado como "SideB".
+  2. Al almacenar credenciales en Keychain (`CookieStorage`), no se especificaban `kSecAttrLabel` ni `kSecAttrDescription`, provocando que el SecurityAgent de macOS mostrara el servicio crudo `com.fefucho.SideB.auth` en el cuadro de diálogo.
+  3. Los usuarios que descargaban el `.zip` desde el navegador se encontraban con el bloqueo de cuarentena de Gatekeeper (`com.apple.quarantine`) al carecer de firma paga con Developer ID de Apple, requiriendo desbloqueo manual en Configuración.
+- **Solución Aplicada**:
+  1. Se estandarizó el nombre del bundle (`Side B.app`) y del ejecutable (`Side B`) en todos los scripts de compilación y empaquetado.
+  2. Se añadieron `kSecAttrLabel: "Side B"` y `kSecAttrDescription: "Sesión de Side B (YouTube Music)"` junto con `SecAccessRef` permisivo en `CookieStorage.swift` para evitar nombres técnicos y solicitudes repetitivas en builds ad-hoc.
+  3. Se creó el script instalador `install.sh` para instalación directa con un comando `curl`, el cual descarga el último release y elimina la bandera de cuarentena con `xattr -cr`.
+  4. Se documentó en `README.md` la recomendación de instalación por `curl` y la solución de una línea `xattr -cr` para aperturas manuales.
+- **Archivos Modificados**: `apple/Sources/SideB/Services/Storage/CookieStorage.swift`, `Scripts/compile_and_run.sh`, `Scripts/package_release.sh`, `install.sh`, `README.md`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `swift build` en `apple/` compiló exitosamente (código 0); `compile_and_run.sh` y `package_release.sh` verificados; `install.sh` probado sintácticamente.
+

@@ -13,7 +13,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 BIN_PATH=$(swift build -c release --show-bin-path)/SideB
-cp "$BIN_PATH" "$MACOS_DIR/SideB"
+cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 
 ICON_KEY=""
 if [ -f "Resources/AppIcon.icns" ]; then
@@ -34,7 +34,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>SideB</string>
+    <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
     <string>com.fefucho.SideB.v2</string>
     <key>CFBundleName</key>

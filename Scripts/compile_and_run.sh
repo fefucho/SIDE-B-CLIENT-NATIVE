@@ -38,14 +38,15 @@ if [ "$BUILT_SDK" != "$CURRENT_SDK" ]; then
     exit 1
 fi
 
-echo "📦 Creando SideB.app bundle..."
-APP_DIR=".build/app/SideB.app"
+echo "📦 Creando Side B.app bundle..."
+APP_NAME="Side B"
+APP_DIR=".build/app/$APP_NAME.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 # Rebuild the bundle from scratch so removed resources cannot survive an update.
-pkill -x "SideB" 2>/dev/null || true
+pkill -x "Side B" 2>/dev/null || pkill -x "SideB" 2>/dev/null || true
 sleep 0.5
 if [ -d "$APP_DIR" ] && [ -x "$LSREGISTER" ]; then
     "$LSREGISTER" -u "$APP_DIR" 2>/dev/null || true
@@ -54,7 +55,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
 echo "📦 Copiando ejecutable Release (SDK $BUILT_SDK)..."
-cp "$SWIFT_BIN" "$MACOS_DIR/"
+cp "$SWIFT_BIN" "$MACOS_DIR/$APP_NAME"
 
 # Ícono: buscar AppIcon.icns en Resources/ junto al script
 ICON_SRC="$SCRIPT_DIR/../apple/Resources/AppIcon.icns"
@@ -75,7 +76,7 @@ cat > "$APP_DIR/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleExecutable</key>
-    <string>SideB</string>
+    <string>${APP_NAME}</string>
     <key>CFBundleIdentifier</key>
     <string>com.fefucho.SideB.v2</string>
     <key>CFBundleName</key>

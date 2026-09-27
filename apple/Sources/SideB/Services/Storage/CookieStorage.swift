@@ -136,6 +136,8 @@ final class CookieStorage {
         let updateAttributes: [String: Any] = [
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrLabel as String: "Side B",
+            kSecAttrDescription as String: "Sesión de Side B (YouTube Music)",
         ]
 
         let updateStatus = SecItemUpdate(updateQuery as CFDictionary, updateAttributes as CFDictionary)
@@ -144,6 +146,15 @@ final class CookieStorage {
             var addQuery = updateQuery
             addQuery[kSecValueData as String] = data
             addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            addQuery[kSecAttrLabel as String] = "Side B"
+            addQuery[kSecAttrDescription as String] = "Sesión de Side B (YouTube Music)"
+
+            #if os(macOS)
+            var access: SecAccess?
+            if SecAccessCreate("Side B" as CFString, nil, &access) == errSecSuccess, let access {
+                addQuery[kSecAttrAccess as String] = access
+            }
+            #endif
 
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             guard addStatus == errSecSuccess else {
