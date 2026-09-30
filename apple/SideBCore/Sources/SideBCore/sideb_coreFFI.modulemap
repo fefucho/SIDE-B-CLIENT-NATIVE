@@ -1,0 +1,4 @@
+module sideb_coreFFI {
+    header "sideb_coreFFI.h"
+    export *
+}

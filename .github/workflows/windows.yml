@@ -1,0 +1,71 @@
+name: Windows CI
+
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'windows/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch: {}
+
+jobs:
+  test-and-build:
+    name: Build & Test Windows (Core + Tauri)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Cargo Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            core/target/
+            windows/src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('core/Cargo.lock', 'windows/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Test Core Crates
+        run: |
+          cd core
+          cargo test -p innertube
+          cargo test -p sideb-core
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd windows
+          pnpm install
+
+      - name: Build Frontend
+        run: |
+          cd windows
+          pnpm build
+
+      - name: Build Tauri Desktop (Check)
+        run: |
+          cd windows
+          pnpm tauri build --no-bundle

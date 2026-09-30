@@ -1,0 +1,56 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "hidden" : false,
+          "image-name" : "nuevo logo 3.png",
+          "name" : "nuevo logo 3",
+          "position" : {
+            "scale" : 1.05,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name" : "NUEVO LOGO.png",
+          "name" : "NUEVO LOGO",
+          "position" : {
+            "scale" : 1.05,
+            "translation-in-points" : [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}
