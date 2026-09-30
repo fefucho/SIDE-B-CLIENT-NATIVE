@@ -19,6 +19,41 @@ function state(generation, options = {}) {
 const song = (videoId) => ({ videoId, title: videoId, artists: 'Artist', thumbnail: null, duration: '3:21' });
 async function settle() { await new Promise((resolve) => setTimeout(resolve, 0)); }
 
+test('queue metadata survives RPC normalization and queue actions preserve freshest progress', async () => {
+  const listeners = new Map(); let published; const enqueued = deferred(); let args;
+  const player = new PlaybackController(async (command, input) => {
+    if (command === 'get_playback_state') return state(2, { position: 10, isPlaying: true });
+    if (command === 'enqueue_tracks') { args = input; return enqueued.promise; }
+    throw new Error(command);
+  }, async (event, handler) => { listeners.set(event, handler); return () => {}; }, next => published = next);
+  await player.connect();
+  const pending = player.enqueue([{ ...song('v'), artistId: 'artist', albumId: 'album', album: 'Album' }], 'next');
+  assert.equal(args.items[0].artistId, 'artist'); assert.equal(args.items[0].albumId, 'album'); assert.equal(args.items[0].duration, 201);
+  listeners.get('playback-progress')({ payload: { generation: 2, position: 12, duration: 201 } });
+  enqueued.resolve(state(2, { position: 10, queue: { revision: 1, items: args.items } }));
+  await pending;
+  assert.equal(published.state.position, 12); assert.equal(published.state.queue.items[0].album, 'Album');
+});
+test('failed queue mutation reports to caller without marking playing audio as failed', async () => {
+  let published;
+  const player = new PlaybackController(async command => {
+    if (command === 'get_playback_state') return state(1, { isPlaying: true });
+    throw new Error('cannot remove current');
+  }, async () => () => {}, next => published = next);
+  await player.connect(); await assert.rejects(player.removeQueueEntry('current'), /cannot remove/);
+  assert.equal(published.state.isPlaying, true); assert.equal(published.error, null);
+});
+test('selecting a duplicate song passes its stable occurrence ID to Rust', async () => {
+  let args;
+  const items = ['first', 'second'].map(entryId => ({ ...song('same'), entryId, duration: 201 }));
+  const player = new PlaybackController(async (command, input) => {
+    if (command === 'get_playback_state') return state(1, { queue: { items, currentIndex: 0 } });
+    args = input; return state(2, { queue: { items, currentIndex: 1 } });
+  }, async () => () => {}, () => {});
+  await player.connect(); await player.playQueueIndex(1);
+  assert.equal(args.queueEntryId, 'second'); assert.equal(args.preserveQueue, true); assert.equal(args.queueItems, null);
+});
+
 test('initial snapshot cannot replace a newer playback state event', async () => {
   const snapshot = deferred(); const listeners = new Map(); let published;
   const player = new PlaybackController(async (command) => {

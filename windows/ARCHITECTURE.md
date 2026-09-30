@@ -10,6 +10,8 @@
 | Búsqueda | `src/lib/search/controller.ts` | Consultas por modo, caché de sesión e invalidación |
 | Catálogo | `src/lib/catalog/controller.ts` | Álbum, artista, grillas, snapshots y solicitudes pendientes |
 | Cuenta | `src/lib/account/controller.ts` | Biblioteca, likes, playlists e historial; cambios y paginación por cuenta |
+| Navegación/ventana | `src/lib/navigation/history.ts`, `window/controller.ts`, `components/shell/TitleBar.svelte` | Atrás/Adelante, snapshots y controles Tauri; fullscreen nativo con restauración |
+| Menús | `src/lib/menu/{types,policy,hooks,executor}.ts`, `components/menu/ContextMenu.svelte` | Política común de macOS, clic derecho/Más, disponibilidad y ejecución por controller |
 | Reproductor UI | `src/lib/player/controller.ts` | Comandos y eventos; snapshot de transporte publicado para barra/fullscreen |
 | Contratos frontend | `src/lib/types.ts`, `account/types.ts` | DTOs del bridge; estado de cuenta adicional tipado |
 | Integración nativa | `src-tauri/src/lib.rs` | Inicialización, estado compartido, autenticación, eventos y registro Tauri |
@@ -22,9 +24,13 @@
 
 Los controladores TypeScript reciben RPC/listeners y publican snapshots a Svelte. La inyección permite probar respuestas y eventos sin Tauri, red ni una cuenta real. Los componentes reciben datos y callbacks; no vuelven a consultar el proveedor por su cuenta.
 
-La cola autoritativa está en Rust. Los eventos `playback-state-changed` y `playback-progress` actualizan tanto barra como fullscreen. `entryId` identifica una ocurrencia, `generation` una carga de audio y `queue.revision` una modificación de cola. Una canción repetida conserva dos entradas. El frontend descarta estados anteriores; Rust valida las operaciones retrasadas y el avance por EOF.
+La cola autoritativa está en Rust. Los eventos `playback-state-changed` y `playback-progress` actualizan tanto barra como fullscreen. `entryId` identifica una ocurrencia, `generation` una carga de audio y `queue.revision` una modificación de cola. Selecciones retrasadas usan entryId, no un índice que pudo cambiar. Una canción repetida conserva dos entradas. El frontend descarta estados anteriores; Rust valida las operaciones retrasadas y el avance por EOF.
 
-Home y catálogo invalidan solicitudes al cambiar contexto; búsqueda y cuenta vacían datos/cachés privados al cambiar de cuenta. El historial de navegación conserva snapshots y scroll, limitado a 40 destinos. Atrás invalida las cargas abandonadas y restaura el destino; puede repetir una carga que se dejó pendiente.
+Una canción de Inicio inicia radio: carga audio y agrega recomendaciones del core sin reiniciar la pista. El epoch de propietario de cola y la generación de sesión descartan recomendaciones obsoletas; un solo request continúa cuando quedan pocas pistas. Se deduplican recomendaciones por videoId, conservando duplicados de playlists y del encolado manual. El error de radio es recuperable e independiente del audio.
+
+Home y catálogo invalidan solicitudes al cambiar contexto; búsqueda y cuenta vacían datos/cachés privados al cambiar de cuenta. El historial conserva snapshots y scroll en pasado/futuro, limitado a 40 entradas por pila. Una visita nueva descarta el futuro; Atrás/Adelante invalidan cargas abandonadas y restauran el destino. Los cambios de cuenta vacían ambas pilas.
+
+Las acciones masivas de playlist resuelven continuaciones antes de reproducir/encolar y conservan setVideoId por ocurrencia. Edición/eliminación/orden validan permisos en el backend y los diálogos sólo cierran tras éxito. Los menús usan los mismos comandos que los botones. La barra superior reemplaza decoraciones Windows; el fullscreen del reproductor usa setFullscreen y limita el scroll a la lista derecha.
 
 Autenticación y almacenamiento sensible permanecen en el runtime. Los DTOs no incluyen cookies ni URLs firmadas. Las vistas muestran sólo el estado público de la sesión.
 

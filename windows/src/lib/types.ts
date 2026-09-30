@@ -122,6 +122,9 @@ export interface PlaybackTrackDto {
   artists: string;
   thumbnail: string | null;
   duration: number | null;
+  artistId?: string | null;
+  albumId?: string | null;
+  album?: string | null;
 }
 
 export interface PlaybackStateDto {
@@ -144,6 +147,9 @@ export interface QueueEntryDto {
   artists: string;
   thumbnail: string | null;
   duration: number | null;
+  artistId?: string | null;
+  albumId?: string | null;
+  album?: string | null;
 }
 
 export interface QueueStateDto {
@@ -151,6 +157,7 @@ export interface QueueStateDto {
   currentIndex: number | null;
   source: { kind: string; id: string | null; title: string | null } | null;
   revision: number;
+  radio?: { loading: boolean; error: string | null; canRetry: boolean } | null;
 }
 
 export interface PlaybackProgressDto {

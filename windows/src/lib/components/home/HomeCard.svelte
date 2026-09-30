@@ -1,11 +1,13 @@
 <script lang="ts">
   import type { HomeItemDto } from '$lib/types';
+  import { createMenuHandlers, targetFromHome } from '$lib/menu/hooks';
 
   export let item: HomeItemDto;
   export let onOpenAlbum: ((id: string) => void) | undefined = undefined;
   export let onOpenPlaylist: ((id: string) => void) | undefined = undefined;
   export let onOpenArtist: ((id: string) => void) | undefined = undefined;
   export let onPlaySong: ((item: HomeItemDto) => void) | undefined = undefined;
+  const menu = createMenuHandlers()(() => targetFromHome(item), { view: 'home' });
 
   let imageFailed = false;
   let lastThumbnail = item.thumbnail;
@@ -40,9 +42,9 @@
   $: artistDetail = plainArtistDetail || subtitleDetail;
 </script>
 
-<article class="card" aria-label={`${typeLabel}: ${item.title}`}>
+<article class="card" aria-label={`${typeLabel}: ${item.title}`} oncontextmenu={menu.onContextMenu}>
   {#if mainAction}
-    <button class="primary-action" type="button" onclick={mainAction} aria-label={`${typeLabel}: ${item.title}`}>
+    <button class="primary-action" type="button" onclick={mainAction} onkeydown={menu.onKeyDown} aria-label={`${typeLabel}: ${item.title}`}>
       <span class="cover-frame" class:artist={item.kind === 'artist'}>
         {#if item.thumbnail && !imageFailed}
           <img src={item.thumbnail} alt="" loading="lazy" onerror={() => (imageFailed = true)} />

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PlaybackStateDto } from "$lib/types";
+  type Panel = "queue" | "lyrics" | "related";
 
   interface Props {
     playback: PlaybackStateDto;
@@ -16,13 +17,19 @@
     likePending?: boolean;
     onToggleLike?: () => void;
     likeError?: string | null;
+    selectedPanel?: Panel;
+    onSelectPanel?: (panel: Panel) => void;
+    onOpenArtist?: (id: string) => void;
+    onOpenAlbum?: (id: string) => void;
+    onOpenMenu?: (event: MouseEvent) => void;
   }
 
-  let { playback, onTogglePlayback, onRetryPlayback, onPrevious, onNext, onSeek, onVolumeChange, fullscreenOpen, onToggleFullscreen, loggedIn = false, liked = false, likePending = false, onToggleLike, likeError = null }: Props = $props();
-  let seekDraft = $state<number | null>(null);
+  let { playback, onTogglePlayback, onRetryPlayback, onPrevious, onNext, onSeek, onVolumeChange, fullscreenOpen, onToggleFullscreen, loggedIn = false, liked = false, likePending = false, onToggleLike, likeError = null, selectedPanel, onSelectPanel, onOpenArtist, onOpenAlbum, onOpenMenu }: Props = $props();
+  let seekDraft = $state<{ generation: number; value: number } | null>(null);
+  let failedArtworkUrl = $state<string | null>(null);
 
   const duration = $derived(finitePositive(playback.duration));
-  const position = $derived(clamp(seekDraft ?? playback.position, 0, duration));
+  const position = $derived(clamp(seekDraft?.generation === playback.generation ? seekDraft.value : playback.position, 0, duration));
   const volume = $derived(clamp(playback.volume, 0, 100));
   const hasTrack = $derived(playback.currentTrack !== null);
   const playLabel = $derived(
@@ -49,12 +56,14 @@
   }
 
   function handleSeekInput(event: Event) {
-    seekDraft = clamp(Number((event.currentTarget as HTMLInputElement).value), 0, duration);
+    seekDraft = { generation: playback.generation, value: clamp(Number((event.currentTarget as HTMLInputElement).value), 0, duration) };
   }
 
   function handleSeekChange(event: Event) {
     const seconds = clamp(Number((event.currentTarget as HTMLInputElement).value), 0, duration);
+    const draft = seekDraft;
     seekDraft = null;
+    if (draft && draft.generation !== playback.generation) return;
     onSeek(seconds);
   }
 
@@ -115,10 +124,10 @@
       </button>
     </div>
 
-    <div class="track">
+    <div class="track" role="group" aria-label="Canción actual" oncontextmenu={(event) => { if (onOpenMenu && hasTrack) { event.preventDefault(); onOpenMenu(event); } }}>
       <div class="artwork">
-        {#if playback.currentTrack?.thumbnail}
-          <img src={playback.currentTrack.thumbnail} alt="" />
+        {#if playback.currentTrack?.thumbnail && failedArtworkUrl !== playback.currentTrack.thumbnail}
+          <img src={playback.currentTrack.thumbnail} alt="" onerror={() => failedArtworkUrl = playback.currentTrack?.thumbnail ?? null} />
         {:else}
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M10 5v12.1a4 4 0 1 1-2-3.46V3l12-2v14.1a4 4 0 1 1-2-3.46V4.4z" /></svg>
         {/if}
@@ -132,9 +141,13 @@
         {:else if playback.isLoading}
           <span class="status" role="status">Cargando audio…</span>
         {:else}
-          <span class="artist" title={playback.currentTrack?.artists ?? ""}>
-            {playback.currentTrack?.artists || "Seleccioná una canción"}
-          </span>
+          <div class="artist-line">
+            {#if playback.currentTrack?.artistId && onOpenArtist}<button type="button" class="metadata-link artist" onclick={() => onOpenArtist?.(playback.currentTrack!.artistId!)} title={playback.currentTrack.artists}>{playback.currentTrack.artists}</button>
+            {:else}<span class="artist" title={playback.currentTrack?.artists ?? ""}>{playback.currentTrack?.artists || "Seleccioná una canción"}</span>{/if}
+            {#if playback.currentTrack?.album}<span class="metadata-separator" aria-hidden="true">·</span>{/if}
+            {#if playback.currentTrack?.albumId && onOpenAlbum}<button type="button" class="metadata-link artist" onclick={() => onOpenAlbum?.(playback.currentTrack!.albumId!)} title={playback.currentTrack.album}>{playback.currentTrack.album}</button>
+            {:else if playback.currentTrack?.album}<span class="artist album" title={playback.currentTrack.album}>{playback.currentTrack.album}</span>{/if}
+          </div>
         {/if}
         {#if likeError}
           <span class="status like-error" role="alert" title={likeError}>{likeError}</span>
@@ -156,9 +169,22 @@
           {/if}
         </button>
       {/if}
+      {#if onOpenMenu && playback.currentTrack}
+        <button class="more-toggle" type="button" aria-label="Más opciones de la canción" title="Más opciones" onclick={onOpenMenu}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+        </button>
+      {/if}
     </div>
 
     <div class="end-controls">
+      {#if onSelectPanel}
+        <button type="button" class="panel-shortcut" class:panel-active={fullscreenOpen && selectedPanel === "lyrics"} aria-label="Abrir letras" title="Letras" aria-pressed={fullscreenOpen && selectedPanel === "lyrics"} onclick={() => onSelectPanel?.("lyrics")}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h14M5 11h12M5 16h8M5 20h5"/></svg>
+        </button>
+        <button type="button" class="panel-shortcut" class:panel-active={fullscreenOpen && selectedPanel === "queue"} aria-label="Abrir cola" title="Cola de reproducción" aria-pressed={fullscreenOpen && selectedPanel === "queue"} onclick={() => onSelectPanel?.("queue")}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+      {/if}
       <div class="volume">
         <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>
         <input
@@ -195,7 +221,9 @@
     box-sizing: border-box;
     width: min(100%, 820px);
     min-width: 0;
+    height: 74px;
     min-height: 74px;
+    max-height: 74px;
     padding: 7px 20px 8px;
     color: #f5f5f6;
     background: rgba(36, 36, 42, 0.94);
@@ -260,7 +288,7 @@
 
   .main-row {
     display: grid;
-    grid-template-columns: 102px minmax(0, 1fr) 205px;
+    grid-template-columns: 102px minmax(0, 1fr) max-content;
     align-items: center;
     gap: 14px;
     min-height: 42px;
@@ -329,6 +357,11 @@
   .title, .artist, .status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title { font-size: 13px; font-weight: 600; }
   .artist, .status { color: #b9b9c2; font-size: 11px; }
+  .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
+  .metadata-link { max-width: 42%; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .metadata-link:hover { color: #fff; text-decoration: underline; }
+  .metadata-separator { flex: none; color: #777780; }
+  .album { min-width: 0; }
   .status.error { color: #ffd37a; }
   .status.like-error { color: #ff9ba1; }
   .like-toggle { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 50%; color: rgb(255 255 255 / 62%); background: transparent; cursor: pointer; }
@@ -338,13 +371,16 @@
   .like-toggle svg { width: 17px; height: 17px; }
   .like-spinner { width: 13px; height: 13px; border: 2px solid rgb(255 255 255 / 30%); border-top-color: #d06c70; border-radius: 50%; animation: spin .8s linear infinite; }
 
-  .end-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
-  .volume { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; }
+  .end-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+  .panel-shortcut, .more-toggle { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 7px; color: rgb(255 255 255 / 65%); background: transparent; cursor: pointer; }
+  .panel-shortcut svg, .more-toggle svg { width: 17px; height: 17px; }
+  .panel-shortcut:hover, .panel-shortcut.panel-active, .more-toggle:hover { color: #fff; background: rgb(255 255 255 / 10%); }
+  .volume { display: flex; flex: 0 1 140px; align-items: center; gap: 8px; min-width: 72px; }
   .volume svg { flex: 0 0 18px; width: 18px; height: 18px; color: #c6c6cd; }
   .volume input { height: 8px; border-radius: 8px; }
   .volume input::-webkit-slider-thumb { width: 10px; height: 10px; border-radius: 50%; }
   .volume input::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; }
-  .volume-value { width: 34px; color: #b9b9c2; font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+  .volume-value { width: 34px; flex: 0 0 34px; color: #b9b9c2; font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
   .fullscreen-toggle { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 5px; border: 0; border-radius: 7px; color: rgb(255 255 255 / 75%); background: transparent; cursor: pointer; }
   .fullscreen-toggle:hover { color: #fff; background: rgb(255 255 255 / 10%); }
   .fullscreen-toggle svg { width: 20px; height: 20px; transition: transform 180ms ease; }
@@ -355,16 +391,36 @@
     outline-offset: 3px;
   }
 
-  @container (max-width: 600px) {
-    .main-row { grid-template-columns: 102px minmax(0, 1fr) 155px; gap: 8px; }
+  @container (max-width: 760px) {
+    .player-bar { padding-right: 12px; padding-left: 12px; }
+    .main-row { grid-template-columns: 90px minmax(0, 1fr) max-content; gap: 6px; }
+    .transport { gap: 2px; }
+    .skip { width: 25px; }
+    .play-toggle { width: 34px; height: 34px; }
     .volume-value { display: none; }
-    .track { gap: 8px; padding-left: 8px; }
+    .volume { flex-basis: 74px; min-width: 62px; gap: 5px; }
+    .track { gap: 7px; padding-left: 7px; }
+    .artwork { flex-basis: 36px; width: 36px; height: 36px; }
+    .end-controls { gap: 3px; }
+    .panel-shortcut, .more-toggle { flex-basis: 25px; width: 25px; height: 28px; }
   }
 
-  @container (max-width: 430px) {
-    .main-row { grid-template-columns: 102px minmax(0, 1fr); }
-    .end-controls { grid-column: 1 / -1; padding: 2px 8px 3px; }
-    .volume { max-width: 180px; }
+  @container (max-width: 540px) {
+    .progress { grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 5px; }
+    .main-row { grid-template-columns: 78px minmax(0, 1fr) max-content; gap: 4px; }
+    .transport { gap: 0; }
+    .skip { width: 21px; padding: 4px; }
+    .play-toggle { width: 32px; height: 32px; }
+    .track { gap: 6px; padding-left: 5px; }
+    .artwork { flex-basis: 32px; width: 32px; height: 32px; }
+    .title { font-size: 11px; }
+    .artist, .status { font-size: 10px; }
+    .like-toggle { flex-basis: 24px; width: 24px; height: 26px; padding: 4px; }
+    .end-controls { gap: 1px; }
+    .panel-shortcut, .more-toggle { flex-basis: 23px; width: 23px; padding: 4px; }
+    .volume { min-width: 40px; flex-basis: 44px; }
+    .volume svg { flex-basis: 16px; width: 16px; height: 16px; }
+    .fullscreen-toggle { flex-basis: 27px; width: 27px; }
   }
 
   @media (prefers-reduced-motion: reduce) {

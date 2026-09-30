@@ -7,6 +7,9 @@
   import SidebarIcon from "./SidebarIcon.svelte";
   import type { AuthStatusDto } from "$lib/types";
   import type { BrowseCardDto } from "$lib/types";
+  import { createMenuHandlers } from "$lib/menu/hooks";
+  import { targetFromCard } from "$lib/menu/types";
+  const createMenu = createMenuHandlers();
 
   type LibraryTab = "playlists" | "albums";
 
@@ -170,7 +173,8 @@
       {:else}
         <div class="collection-list" aria-label={libraryTab === "playlists" ? "Playlists" : "Álbumes guardados"}>
           {#each currentItems as item, index (`${item.id || `${item.kind}-${item.title}`}-${index}`)}
-            <button class="sidebar-row item-row" class:active={selectedCollectionId === item.id} type="button" title={item.title} onclick={() => libraryTab === "playlists" ? onOpenPlaylist?.(item.id) : onOpenAlbum?.(item.id)}>
+            {@const menu = createMenu(() => targetFromCard(item), () => ({ view: activeDestination, currentId: selectedCollectionId }))}
+            <button class="sidebar-row item-row" class:active={selectedCollectionId === item.id} type="button" title={item.title} onclick={() => libraryTab === "playlists" ? onOpenPlaylist?.(item.id) : onOpenAlbum?.(item.id)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
               {#if item.thumbnail}<img class="item-art" src={item.thumbnail} alt="" />{:else}<span class="item-art placeholder" aria-hidden="true">♪</span>{/if}
               <span class="row-label">{item.title}</span>
             </button>

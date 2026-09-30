@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { ArtistDetailDto, BrowseCardDto } from "$lib/types";
   import DescriptionModal from "./DescriptionModal.svelte";
+  import { createMenuHandlers } from "$lib/menu/hooks";
+  import { targetFromCard } from "$lib/menu/types";
 
   interface Props {
     artist: ArtistDetailDto | null;
@@ -42,9 +44,9 @@
   let radioPending = $state(false);
   let subscriptionPending = $state(false);
   let actionError = $state<string | null>(null);
-  let copied = $state(false);
   let avatarFailed = $state(false);
   let failedImages = $state(new Set<string>());
+  const createMenu = createMenuHandlers();
 
   const visibleTopSongs = $derived(artist?.topSongs.slice(0, 5) ?? []);
 
@@ -71,18 +73,6 @@
       actionError = errorMessage(cause, "No se pudo actualizar la suscripción.");
     } finally {
       subscriptionPending = false;
-    }
-  }
-
-  async function copyLink() {
-    if (!artist) return;
-    actionError = null;
-    try {
-      await navigator.clipboard.writeText(`https://www.youtube.com/channel/${encodeURIComponent(artist.channelId)}`);
-      copied = true;
-      window.setTimeout(() => (copied = false), 1800);
-    } catch {
-      actionError = "No se pudo copiar el enlace.";
     }
   }
 
@@ -125,8 +115,10 @@
       <button class="action-button primary" type="button" onclick={onRetry}>Reintentar</button>
     </div>
   {:else if artist}
+    {@const artistCard = { kind: 'artist', id: artist.channelId, title: artist.name, subtitle: artist.subscribers, thumbnail: artist.thumbnail, duration: null }}
+    {@const artistMenu = createMenu(() => ({ kind: 'artist', card: artistCard, detail: artist }), { view: 'artist_detail', currentId: artist.channelId })}
     <div class="artist-content">
-      <header class="artist-header">
+      <header class="artist-header" role="group" oncontextmenu={artistMenu.onContextMenu}>
         {#if artist.thumbnail && !avatarFailed}
           <img class="avatar" src={artist.thumbnail} alt="" onerror={() => avatarFailed = true} />
         {:else}
@@ -162,10 +154,7 @@
                 {subscriptionPending ? "Actualizando…" : artist.subscribed ? "♧ Suscrito" : "♧ Suscribirse"}
               </button>
             {/if}
-            <details class="more-menu">
-              <summary aria-label="Más opciones" title="Más opciones">•••</summary>
-              <div class="menu-panel"><button type="button" onclick={copyLink}>{copied ? "Enlace copiado" : "Copiar enlace"}</button></div>
-            </details>
+            <button class="more-menu-trigger" type="button" aria-label="Más opciones" title="Más opciones" aria-haspopup="menu" onclick={artistMenu.onContextMenu} onkeydown={artistMenu.onKeyDown}>•••</button>
           </div>
           {#if actionError}<p class="action-error" role="alert">{actionError}</p>{/if}
         </div>
@@ -180,12 +169,13 @@
           </div>
           <div class="top-song-list">
             {#each visibleTopSongs as song, index (`${song.videoId}:${index}`)}
-              <div class="top-song" class:current={currentTrackId === song.videoId}>
+              {@const songMenu = createMenu(() => ({ kind: 'song', song }), { view: 'artist_detail', currentId: artist.channelId })}
+              <div class="top-song" role="group" class:current={currentTrackId === song.videoId} oncontextmenu={songMenu.onContextMenu}>
                 <button class="song-index" type="button" aria-label={`Reproducir ${song.title}`} onclick={() => onPlay(index)}>{currentTrackId === song.videoId && isPlaying ? "♫" : index + 1}</button>
                 <button class="song-art" type="button" aria-label={`Reproducir ${song.title}`} onclick={() => onPlay(index)}>
                   {#if song.thumbnail && !failedImages.has(song.thumbnail)}<img src={song.thumbnail} alt="" loading="lazy" onerror={() => failedImages = new Set(failedImages).add(song.thumbnail!)} />{:else}<span aria-hidden="true">♫</span>{/if}
                 </button>
-                <div class="song-text"><button class="song-title" type="button" onclick={() => onPlay(index)}>{song.title}</button>
+                <div class="song-text"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={songMenu.onKeyDown}>{song.title}</button>
                   {#if song.album && song.albumId}<button class="song-subtitle" type="button" onclick={() => onOpenAlbum(song.albumId!)}>{song.album}</button>
                   {:else}<span class="song-subtitle">{song.album || song.artists}</span>{/if}
                 </div>
@@ -207,12 +197,13 @@
             </div>
             <div class="carousel">
               {#each section.items as card, index (`${card.kind}:${card.id}:${index}`)}
+                {@const cardMenu = createMenu(() => targetFromCard(card), { view: 'artist_detail', currentId: artist.channelId })}
                 {#if canOpenCard(card)}
-                  <button class="carousel-card interactive-card" class:video={card.kind === "video"} type="button" onclick={() => openCard(card)}>
+                  <button class="carousel-card interactive-card" class:video={card.kind === "video"} type="button" onclick={() => openCard(card)} oncontextmenu={cardMenu.onContextMenu} onkeydown={cardMenu.onKeyDown}>
                     {@render cardContent(card)}
                   </button>
                 {:else}
-                  <div class="carousel-card" class:video={card.kind === "video"} aria-label={`${card.title}; acción no disponible`}>
+                  <div class="carousel-card" role="group" class:video={card.kind === "video"} aria-label={`${card.title}; acción no disponible`} oncontextmenu={cardMenu.onContextMenu}>
                     {@render cardContent(card)}
                   </div>
                 {/if}
@@ -264,12 +255,8 @@
   .action-button.primary { padding-inline: 16px; background: rgb(255 255 255 / 16%); font-weight: 600; }
   .action-button:disabled { opacity: .6; cursor: wait; }
   .action-error { margin: 0; color: #f08a90; font-size: 12px; }
-  .more-menu { position: relative; }
-  .more-menu summary { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: rgb(255 255 255 / 8%); color: #eee; font-weight: 700; letter-spacing: 1px; cursor: pointer; list-style: none; }
-  .more-menu summary::-webkit-details-marker { display: none; }
-  .menu-panel { position: absolute; z-index: 3; right: 0; top: calc(100% + 6px); min-width: 150px; padding: 5px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 8px; background: #29292e; box-shadow: 0 8px 24px rgb(0 0 0 / 35%); }
-  .menu-panel button { width: 100%; padding: 9px 10px; border: 0; border-radius: 5px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
-  .menu-panel button:hover { background: rgb(255 255 255 / 9%); }
+  .more-menu-trigger { display: grid; width: 34px; height: 34px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: rgb(255 255 255 / 8%); color: #eee; font: inherit; font-weight: 700; letter-spacing: 1px; cursor: pointer; }
+  .more-menu-trigger:hover { background: rgb(255 255 255 / 14%); }
   .divider { height: 1px; margin: 0 32px; background: rgb(255 255 255 / 12%); }
   .top-songs-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .top-song-list { display: flex; flex-direction: column; gap: 4px; }

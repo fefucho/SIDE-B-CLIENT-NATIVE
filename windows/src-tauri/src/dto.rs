@@ -12,16 +12,35 @@ pub struct AuthStatusDto {
 
 impl AuthStatusDto {
     pub(crate) fn guest() -> Self {
-        Self { state: "guest".into(), name: None, email: None, thumbnail: None, message: None }
+        Self {
+            state: "guest".into(),
+            name: None,
+            email: None,
+            thumbnail: None,
+            message: None,
+        }
     }
     pub(crate) fn authorizing() -> Self {
-        Self { state: "authorizing".into(), ..Self::guest() }
+        Self {
+            state: "authorizing".into(),
+            ..Self::guest()
+        }
     }
     pub(crate) fn ready(info: sideb_core::AccountInfoRecord) -> Self {
-        Self { state: "ready".into(), name: info.name, email: info.email, thumbnail: info.thumbnail, message: None }
+        Self {
+            state: "ready".into(),
+            name: info.name,
+            email: info.email,
+            thumbnail: info.thumbnail,
+            message: None,
+        }
     }
     pub(crate) fn error(message: &str) -> Self {
-        Self { state: "error".into(), message: Some(message.into()), ..Self::guest() }
+        Self {
+            state: "error".into(),
+            message: Some(message.into()),
+            ..Self::guest()
+        }
     }
 }
 
@@ -33,6 +52,12 @@ pub struct PlaybackTrackDto {
     pub artists: String,
     pub thumbnail: Option<String>,
     pub duration: Option<f64>,
+    #[serde(default)]
+    pub artist_id: Option<String>,
+    #[serde(default)]
+    pub album_id: Option<String>,
+    #[serde(default)]
+    pub album: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -76,7 +101,11 @@ pub struct SongDto {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LibraryToggleDto { pub in_library: bool, pub add_token: Option<String>, pub remove_token: Option<String> }
+pub struct LibraryToggleDto {
+    pub in_library: bool,
+    pub add_token: Option<String>,
+    pub remove_token: Option<String>,
+}
 
 impl From<sideb_core::SongItemRecord> for SongDto {
     fn from(r: sideb_core::SongItemRecord) -> Self {
@@ -91,7 +120,11 @@ impl From<sideb_core::SongItemRecord> for SongDto {
             artist_id: r.artist_id,
             album_id: r.album_id,
             set_video_id: r.set_video_id,
-            library: r.library.map(|v| LibraryToggleDto { in_library: v.in_library, add_token: v.add_token, remove_token: v.remove_token }),
+            library: r.library.map(|v| LibraryToggleDto {
+                in_library: v.in_library,
+                add_token: v.add_token,
+                remove_token: v.remove_token,
+            }),
         }
     }
 }
@@ -147,7 +180,11 @@ impl From<sideb_core::AlbumDetailRecord> for AlbumDetailDto {
             artist_id: r.artist_id,
             playlist_id: r.playlist_id,
             in_library: r.in_library,
-            sections: r.sections.into_iter().map(ArtistCarouselDto::from).collect(),
+            sections: r
+                .sections
+                .into_iter()
+                .map(ArtistCarouselDto::from)
+                .collect(),
         }
     }
 }
@@ -198,7 +235,11 @@ impl From<sideb_core::HomeItemRecord> for HomeItemDto {
             album_id: i.album_id,
             artist_id: i.artist_id,
             album: i.album,
-            artist_runs: i.artist_runs.into_iter().map(HomeArtistRunDto::from).collect(),
+            artist_runs: i
+                .artist_runs
+                .into_iter()
+                .map(HomeArtistRunDto::from)
+                .collect(),
             explicit: i.explicit,
         }
     }
@@ -251,52 +292,149 @@ impl From<sideb_core::HomePageRecord> for HomePageDto {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HomeArtistRunDto { pub text: String, pub id: Option<String> }
+pub struct HomeArtistRunDto {
+    pub text: String,
+    pub id: Option<String>,
+}
 impl From<sideb_core::HomeArtistRunRecord> for HomeArtistRunDto {
-    fn from(r: sideb_core::HomeArtistRunRecord) -> Self { Self { text: r.text, id: r.id } }
+    fn from(r: sideb_core::HomeArtistRunRecord) -> Self {
+        Self {
+            text: r.text,
+            id: r.id,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BrowseCardDto { pub kind: String, pub id: String, pub title: String, pub subtitle: Option<String>, pub thumbnail: Option<String>, pub duration: Option<String> }
+pub struct BrowseCardDto {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub thumbnail: Option<String>,
+    pub duration: Option<String>,
+}
 impl From<sideb_core::BrowseCardRecord> for BrowseCardDto {
-    fn from(r: sideb_core::BrowseCardRecord) -> Self { Self { kind: r.kind, id: r.id, title: r.title, subtitle: r.subtitle, thumbnail: r.thumbnail, duration: r.duration } }
+    fn from(r: sideb_core::BrowseCardRecord) -> Self {
+        Self {
+            kind: r.kind,
+            id: r.id,
+            title: r.title,
+            subtitle: r.subtitle,
+            thumbnail: r.thumbnail,
+            duration: r.duration,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ArtistCarouselDto { pub title: String, pub items: Vec<BrowseCardDto>, pub more_browse_id: Option<String>, pub more_params: Option<String> }
+pub struct ArtistCarouselDto {
+    pub title: String,
+    pub items: Vec<BrowseCardDto>,
+    pub more_browse_id: Option<String>,
+    pub more_params: Option<String>,
+}
 impl From<sideb_core::ArtistCarouselRecord> for ArtistCarouselDto {
-    fn from(r: sideb_core::ArtistCarouselRecord) -> Self { Self { title: r.title, items: r.items.into_iter().map(BrowseCardDto::from).collect(), more_browse_id: r.more_browse_id, more_params: r.more_params } }
+    fn from(r: sideb_core::ArtistCarouselRecord) -> Self {
+        Self {
+            title: r.title,
+            items: r.items.into_iter().map(BrowseCardDto::from).collect(),
+            more_browse_id: r.more_browse_id,
+            more_params: r.more_params,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtistDetailDto {
-    pub channel_id: String, pub name: String, pub thumbnail: Option<String>, pub description: Option<String>,
-    pub subscribers: Option<String>, pub monthly_listeners: Option<String>, pub subscribed: bool,
-    pub radio_playlist_id: Option<String>, pub top_songs: Vec<SongDto>, pub top_songs_id: Option<String>, pub sections: Vec<ArtistCarouselDto>,
+    pub channel_id: String,
+    pub name: String,
+    pub thumbnail: Option<String>,
+    pub description: Option<String>,
+    pub subscribers: Option<String>,
+    pub monthly_listeners: Option<String>,
+    pub subscribed: bool,
+    pub radio_playlist_id: Option<String>,
+    pub top_songs: Vec<SongDto>,
+    pub top_songs_id: Option<String>,
+    pub sections: Vec<ArtistCarouselDto>,
 }
 impl From<sideb_core::ArtistDetailRecord> for ArtistDetailDto {
-    fn from(r: sideb_core::ArtistDetailRecord) -> Self { Self {
-        channel_id: r.channel_id, name: r.name, thumbnail: r.thumbnail, description: r.description,
-        subscribers: r.subscribers, monthly_listeners: r.monthly_listeners, subscribed: r.subscribed,
-        radio_playlist_id: r.radio_playlist_id, top_songs: r.top_songs.into_iter().map(SongDto::from).collect(),
-        top_songs_id: r.top_songs_id, sections: r.sections.into_iter().map(ArtistCarouselDto::from).collect(),
-    } }
+    fn from(r: sideb_core::ArtistDetailRecord) -> Self {
+        Self {
+            channel_id: r.channel_id,
+            name: r.name,
+            thumbnail: r.thumbnail,
+            description: r.description,
+            subscribers: r.subscribers,
+            monthly_listeners: r.monthly_listeners,
+            subscribed: r.subscribed,
+            radio_playlist_id: r.radio_playlist_id,
+            top_songs: r.top_songs.into_iter().map(SongDto::from).collect(),
+            top_songs_id: r.top_songs_id,
+            sections: r
+                .sections
+                .into_iter()
+                .map(ArtistCarouselDto::from)
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlaylistDetailDto { pub id: String, pub title: String, pub subtitle: Option<String>, pub thumbnail: Option<String>, pub description: Option<String>, pub items: Vec<SongDto>, pub continuation: Option<String>, pub owned: bool, pub in_library: bool, pub privacy: Option<String>, pub collaborative: bool, pub sort: Option<String>, pub sort_editable: bool }
+pub struct PlaylistDetailDto {
+    pub id: String,
+    pub title: String,
+    pub subtitle: Option<String>,
+    pub thumbnail: Option<String>,
+    pub description: Option<String>,
+    pub items: Vec<SongDto>,
+    pub continuation: Option<String>,
+    pub owned: bool,
+    pub in_library: bool,
+    pub privacy: Option<String>,
+    pub collaborative: bool,
+    pub sort: Option<String>,
+    pub sort_editable: bool,
+}
 impl From<sideb_core::PlaylistDetailRecord> for PlaylistDetailDto {
-    fn from(r: sideb_core::PlaylistDetailRecord) -> Self { Self { id: r.id, title: r.title, subtitle: r.subtitle, thumbnail: r.thumbnail, description: r.description, items: r.items.into_iter().map(SongDto::from).collect(), continuation: r.continuation, owned: r.owned, in_library: r.in_library, privacy: r.privacy, collaborative: r.collaborative, sort: r.sort, sort_editable: r.sort_editable } }
+    fn from(r: sideb_core::PlaylistDetailRecord) -> Self {
+        Self {
+            id: r.id,
+            title: r.title,
+            subtitle: r.subtitle,
+            thumbnail: r.thumbnail,
+            description: r.description,
+            items: r.items.into_iter().map(SongDto::from).collect(),
+            continuation: r.continuation,
+            owned: r.owned,
+            in_library: r.in_library,
+            privacy: r.privacy,
+            collaborative: r.collaborative,
+            sort: r.sort,
+            sort_editable: r.sort_editable,
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HistoryGroupDto { pub title: String, pub items: Vec<SongDto> }
-impl From<sideb_core::HistoryGroupRecord> for HistoryGroupDto { fn from(r: sideb_core::HistoryGroupRecord) -> Self { Self { title: r.title, items: r.items.into_iter().map(SongDto::from).collect() } } }
+pub struct HistoryGroupDto {
+    pub title: String,
+    pub items: Vec<SongDto>,
+}
+impl From<sideb_core::HistoryGroupRecord> for HistoryGroupDto {
+    fn from(r: sideb_core::HistoryGroupRecord) -> Self {
+        Self {
+            title: r.title,
+            items: r.items.into_iter().map(SongDto::from).collect(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -323,5 +461,15 @@ impl CommandError {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PlaylistContinuationDto { pub items: Vec<SongDto>, pub continuation: Option<String> }
-impl From<sideb_core::PlaylistContinuationRecord> for PlaylistContinuationDto { fn from(r: sideb_core::PlaylistContinuationRecord) -> Self { Self { items: r.items.into_iter().map(SongDto::from).collect(), continuation: r.continuation } } }
+pub struct PlaylistContinuationDto {
+    pub items: Vec<SongDto>,
+    pub continuation: Option<String>,
+}
+impl From<sideb_core::PlaylistContinuationRecord> for PlaylistContinuationDto {
+    fn from(r: sideb_core::PlaylistContinuationRecord) -> Self {
+        Self {
+            items: r.items.into_iter().map(SongDto::from).collect(),
+            continuation: r.continuation,
+        }
+    }
+}

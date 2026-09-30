@@ -1,17 +1,17 @@
 <script lang="ts">
   import type { AlbumDetailDto } from "$lib/types";
+  import { createMenuHandlers } from "$lib/menu/hooks";
   interface Props {
     album: AlbumDetailDto; loggedIn: boolean; onPlay: (index: number, shuffle?: boolean) => void;
     onOpenArtist: (id: string) => void; onToggleLibrary: () => Promise<void>;
     onDescription: () => void;
   }
   let { album, loggedIn, onPlay, onOpenArtist, onToggleLibrary, onDescription }: Props = $props();
+  const createMenu = createMenuHandlers();
+  const menu = createMenu(() => ({ kind: 'album', card: { kind: 'album', id: album.browseId, title: album.title, subtitle: album.artist, thumbnail: album.thumbnail, duration: null }, detail: album }), () => ({ view: 'album_detail', currentId: album.browseId }));
   let imageFailed = $state(false);
-  let menuOpen = $state(false);
   let saving = $state(false);
   let libraryError = $state("");
-  let moreButton: HTMLButtonElement;
-  let moreWrap: HTMLDivElement;
   const hasDescription = $derived(Boolean(album.description?.trim()));
   const meta = $derived([album.subtitle, album.secondSubtitle ?? `${album.items.length} canciones`].filter(Boolean));
 
@@ -21,23 +21,6 @@
     try { await onToggleLibrary(); } catch (error) { libraryError = error instanceof Error ? error.message : "No se pudo actualizar la biblioteca."; }
     finally { saving = false; }
   }
-  async function copyLink() {
-    try { await navigator.clipboard.writeText(`https://music.youtube.com/browse/${encodeURIComponent(album.browseId)}`); closeMenu(); }
-    catch { libraryError = "No se pudo copiar el enlace."; }
-  }
-  function closeMenu() { menuOpen = false; moreButton?.focus(); }
-  function onMenuKeydown(event: KeyboardEvent) {
-    if (event.key === "Escape" && menuOpen) { event.preventDefault(); menuOpen = false; moreButton?.focus(); }
-  }
-  function onDocumentClick(event: MouseEvent) {
-    if (menuOpen && event.target instanceof Node && !moreWrap?.contains(event.target)) menuOpen = false;
-  }
-  $effect(() => {
-    if (!menuOpen) return;
-    document.addEventListener("keydown", onMenuKeydown);
-    document.addEventListener("click", onDocumentClick);
-    return () => { document.removeEventListener("keydown", onMenuKeydown); document.removeEventListener("click", onDocumentClick); };
-  });
 </script>
 
 <div class="header">
@@ -63,14 +46,7 @@
           {saving ? "Guardando…" : album.inLibrary ? "▣ En biblioteca" : "▢ Guardar"}
         </button>
       {/if}
-      <div class="more-wrap" bind:this={moreWrap}><button bind:this={moreButton} type="button" class="more" aria-label="Más opciones" aria-expanded={menuOpen} onclick={() => menuOpen = !menuOpen}>•••</button>
-        {#if menuOpen}<div class="menu">
-          <button type="button" disabled={!album.items.length} onclick={() => { closeMenu(); onPlay(0); }}>Reproducir álbum</button>
-          <button type="button" disabled={!album.items.length} onclick={() => { closeMenu(); onPlay(0, true); }}>Reproducir aleatoriamente</button>
-          {#if album.artistId}<button type="button" onclick={() => { closeMenu(); onOpenArtist(album.artistId!); }}>Ver artista</button>{/if}
-          <button type="button" onclick={copyLink}>Copiar enlace</button>
-        </div>{/if}
-      </div>
+      <button type="button" class="more" aria-label="Más opciones" title="Más opciones" aria-haspopup="menu" onclick={menu.onContextMenu} onkeydown={menu.onKeyDown}>•••</button>
     </div>
     {#if libraryError}<p class="error" role="alert">{libraryError}</p>{/if}
   </div>
@@ -95,12 +71,7 @@
   .actions > button:disabled { opacity: .45; cursor: not-allowed; }
   .actions > .primary { border-color: transparent; background: var(--sideb-accent, #a33d45); font-weight: 650; }
   .primary span { margin-right: 4px; }
-  .more-wrap { position: relative; }
   .more { width: 36px; padding: 0; font-size: 15px; }
-  .menu { position: absolute; z-index: 3; top: calc(100% + 6px); right: 0; display: flex; width: 220px; flex-direction: column; padding: 5px; border: 1px solid var(--sideb-surface-border); border-radius: 10px; background: #303036; box-shadow: 0 12px 28px #0008; }
-  .menu button { padding: 9px 10px; border: 0; border-radius: 6px; color: inherit; background: none; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
-  .menu button:hover { background: var(--sideb-surface-hover); }
-  .menu button:disabled { opacity: .45; cursor: not-allowed; }
   .error { margin: 5px 0 0; color: #ff9d9d; font-size: 12px; }
   button:focus-visible { outline: 2px solid var(--sideb-highlight); outline-offset: 3px; }
   @media (max-width: 680px) { .header { gap: 16px; padding: 22px 18px; } .artwork { width: 128px; height: 128px; } .info { height: auto; min-height: 128px; } h1 { font-size: 24px; } .eyebrow { font-size: 10px; } .artist { font-size: 14px; } .actions { margin-top: 14px; } }

@@ -4,7 +4,7 @@ export type PlayerRpc = <T>(command: string, args?: Record<string, unknown>) => 
 export type PlayerUnlisten = () => void | Promise<void>;
 export type PlayerListen = <T>(event: string, handler: (event: { payload: T }) => void) => Promise<PlayerUnlisten>;
 export type PlaybackSnapshot = { state: PlaybackStateDto; error: string | null };
-export type PlayerSong = Pick<SongDto, 'videoId' | 'title' | 'artists' | 'thumbnail' | 'duration'> | PlaybackTrackDto | QueueEntryDto;
+export type PlayerSong = Pick<SongDto, 'videoId' | 'title' | 'artists' | 'thumbnail' | 'duration'> & Partial<Pick<SongDto, 'artistId' | 'albumId' | 'album'>> | PlaybackTrackDto | QueueEntryDto;
 export type PlaybackQueueSource = { kind: string; id: string | null; title: string | null };
 export interface PlaySongOptions {
   queueItems?: PlayerSong[];
@@ -33,7 +33,7 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 function cloneState(state: PlaybackStateDto): PlaybackStateDto {
   return { ...state, currentTrack: state.currentTrack ? { ...state.currentTrack } : null,
-    queue: { ...state.queue, source: state.queue.source ? { ...state.queue.source } : null,
+    queue: { ...state.queue, radio: state.queue.radio ? { ...state.queue.radio } : null, source: state.queue.source ? { ...state.queue.source } : null,
       items: state.queue.items.map((item) => ({ ...item })) } };
 }
 function songDuration(song: PlayerSong): number | null {
@@ -43,7 +43,8 @@ function songDuration(song: PlayerSong): number | null {
 function entryFor(song: PlayerSong, index: number): QueueEntryDto {
   const withEntry = song as Partial<QueueEntryDto>;
   return { entryId: withEntry.entryId || createEntryId(index), videoId: song.videoId, title: song.title,
-    artists: song.artists, thumbnail: song.thumbnail, duration: songDuration(song) };
+    artists: song.artists, thumbnail: song.thumbnail, duration: songDuration(song),
+    artistId: song.artistId ?? null, albumId: song.albumId ?? null, album: song.album ?? null };
 }
 let localEntrySequence = 0;
 function createEntryId(index: number): string {
@@ -87,7 +88,13 @@ export class PlaybackController {
     return true;
   }
   private acceptResponse(next: PlaybackStateDto, eventRevision: number): boolean {
-    if (this.eventRevision !== eventRevision && next.generation <= this.state.generation) return false;
+    if (this.eventRevision !== eventRevision && next.generation <= this.state.generation) {
+      // A progress event can be newer than a queue RPC while the queue revision is newer than our list.
+      if (next.generation === this.state.generation && next.queue.revision > this.state.queue.revision) {
+        this.state = { ...this.state, queue: cloneState(next).queue }; this.emit(); return true;
+      }
+      return false;
+    }
     return this.acceptState(next);
   }
   private fail(key: string, revision: number, eventRevision: number, cause: unknown, fallback: string) {
@@ -159,6 +166,7 @@ export class PlaybackController {
         queueCurrentIndex: queueIndex, queueSource: entries ? options.queueSource ?? {
           kind: 'song', id: song.videoId.trim(), title: song.title || null,
         } : null, preserveQueue,
+        queueEntryId: preserveQueue ? (song as Partial<QueueEntryDto>).entryId ?? (queueIndex == null ? null : this.state.queue.items[queueIndex]?.entryId) ?? null : null,
       });
       if (this.current('play-song', revision)) this.acceptResponse(state, eventRevision);
     } catch (cause) {
@@ -172,6 +180,33 @@ export class PlaybackController {
     const entry = this.state.queue.items[index];
     if (!entry) return;
     return this.playSong(entry, { preserveQueue: true, queueIndex: index });
+  }
+
+  async startRadio(song: SongDto): Promise<void> {
+    const revision = this.issue('play-song');
+    const eventRevision = this.eventRevision;
+    try {
+      const next = await this.rpc<PlaybackStateDto>('start_song_radio', { song });
+      if (this.current('play-song', revision)) this.acceptResponse(next, eventRevision);
+    } catch (cause) {
+      this.fail('play-song', revision, eventRevision, cause, 'No se pudo iniciar la radio.');
+      if (this.current('play-song', revision)) throw new Error(errorMessage(cause, 'No se pudo iniciar la radio.'));
+    }
+  }
+
+  async enqueue(songs: PlayerSong[], position: 'next' | 'end') {
+    return this.queueCommand('enqueue_tracks', { items: songs.map(entryFor), position });
+  }
+  async removeQueueEntry(entryId: string) {
+    return this.queueCommand('remove_queue_entry', { entryId });
+  }
+  async retryRadio() { return this.queueCommand('retry_radio', {}); }
+
+  /** Queue mutations must report failure to menus without marking playable audio as broken. */
+  private async queueCommand(command: string, args: Record<string, unknown>) {
+    const eventRevision = this.eventRevision;
+    const next = await this.rpc<PlaybackStateDto>(command, args);
+    this.acceptResponse(next, eventRevision);
   }
 
   async next(): Promise<void> { return this.command('next', 'next_track', {}, 'No se pudo avanzar la cola.'); }

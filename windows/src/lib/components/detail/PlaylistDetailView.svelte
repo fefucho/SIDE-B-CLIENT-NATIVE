@@ -9,23 +9,32 @@
     inLibrary?: boolean;
     owned?: boolean;
   };
+  type MenuEvent = MouseEvent | KeyboardEvent;
 
   interface Props {
     playlist: PlaylistViewDto | null; loading: boolean; loadingMore: boolean; error: string | null;
     loggedIn: boolean; currentTrackId: string | null; isPlaying: boolean; likedIds: Set<string>; pendingIds: Set<string>;
-    onBack: () => void; onRetry: () => void; onLoadMore: () => void; onPlay: (index: number) => void;
+    onBack: () => void; onRetry: () => void; onLoadMore: () => void; onPlay: (index: number, shuffle?: boolean) => void;
     onToggleLike: (track: SongDto) => void; onToggleSaved: (track: SongDto) => void;
     onToggleLibrary: () => Promise<void>; onOpenArtist: (id: string) => void; onOpenAlbum: (id: string) => void;
     onLogin: () => void;
+    onOpenMenu?: (event: MenuEvent) => void;
+    onTrackMenu?: (event: MenuEvent, track: SongDto) => void;
+    onRemoveTrack?: (track: SongDto) => void;
+    onMoveTrack?: (setVideoId: string, successorSetVideoId: string | null) => void;
+    onSortChange?: (sort: string) => Promise<void>;
+    mutationPending?: boolean;
   }
   let {
     playlist, loading, loadingMore, error, loggedIn, currentTrackId, isPlaying, likedIds, pendingIds,
     onBack, onRetry, onLoadMore, onPlay, onToggleLike, onToggleSaved, onToggleLibrary, onOpenArtist, onOpenAlbum, onLogin,
+    onOpenMenu, onTrackMenu, onRemoveTrack, onMoveTrack, onSortChange, mutationPending = false,
   }: Props = $props();
   let showDescription = $state(false);
   let failedArtwork = $state(false);
   let saving = $state(false);
   let actionError = $state<string | null>(null);
+  let sortPending = $state(false);
   const canSavePlaylist = $derived(Boolean(playlist && loggedIn && playlist.id !== "LM" && !playlist.owned));
 
   async function toggleLibrary() {
@@ -35,6 +44,14 @@
     try { await onToggleLibrary(); }
     catch (cause) { actionError = cause instanceof Error ? cause.message : String(cause); }
     finally { saving = false; }
+  }
+  async function changeSort(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value;
+    if (!onSortChange || sortPending) return;
+    sortPending = true; actionError = null;
+    try { await onSortChange(value); }
+    catch (cause) { actionError = cause instanceof Error ? cause.message : String(cause); }
+    finally { sortPending = false; }
   }
 </script>
 
@@ -59,15 +76,18 @@
           {#if playlist.description}<button class="description" type="button" onclick={() => showDescription = true} aria-label="Leer descripción completa">{playlist.description}<span> más</span></button>{/if}
           {#if !playlist.subtitle}<p class="count">{playlist.items.length}{playlist.continuation ? '+' : ''} canciones</p>{/if}
           <div class="actions">
-            <button class="play" type="button" disabled={!playlist.items.length} onclick={() => onPlay(0)}>▶ <span>Reproducir</span></button>
+            <button class="play" type="button" disabled={!playlist.items.length} onclick={() => onPlay(0, false)}>▶ <span>Reproducir</span></button>
+            <button class="shuffle" type="button" disabled={!playlist.items.length} onclick={() => onPlay(0, true)}><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m16 3 4 4-4 4M4 17h2.5c4.2 0 6.3-10 10.5-10H20M16 13l4 4-4 4M4 7h2.5c1.5 0 2.7 1.2 3.8 2.7m2.3 4.6c1.1 1.5 2.3 2.7 3.9 2.7H20" /></svg><span>Aleatorio</span></button>
             {#if canSavePlaylist}<button class="save" type="button" disabled={saving} aria-pressed={Boolean(playlist.inLibrary)} onclick={toggleLibrary}>{playlist.inLibrary ? "▣ En biblioteca" : "▢ Guardar"}</button>{/if}
+            {#if playlist.owned && playlist.sortEditable && onSortChange}<label class="sort-control"><span>Orden</span><select value={playlist.sort ?? 'default'} disabled={sortPending || mutationPending} onchange={changeSort}><option value="default">Manual</option><option value="newest">Más recientes</option><option value="oldest">Más antiguas</option><option value="title">Título</option><option value="artist">Artista</option><option value="album">Álbum</option></select></label>{/if}
+            {#if onOpenMenu}<button class="more-button" type="button" aria-label="Más opciones de la playlist" title="Más opciones" onclick={onOpenMenu} oncontextmenu={(event) => { event.preventDefault(); onOpenMenu?.(event); }} onkeydown={(event) => { if (event.shiftKey && (event.key === 'F10' || event.key === 'ContextMenu')) onOpenMenu?.(event); }}><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>{/if}
           </div>
         </div>
       </header>
       {#if actionError}<div class="inline-error" role="alert">{actionError}</div>{/if}
       {#if error && playlist}<div class="inline-error" role="alert">No se pudo actualizar: {error}<button type="button" onclick={onRetry}>Reintentar</button></div>{/if}
       {#if playlist.items.length}
-        <AccountTrackTable items={playlist.items} {currentTrackId} {isPlaying} onPlay={onPlay} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} {likedIds} {pendingIds} onToggleLike={loggedIn ? onToggleLike : undefined} onToggleSaved={loggedIn ? onToggleSaved : undefined} />
+        <AccountTrackTable items={playlist.items} {currentTrackId} {isPlaying} onPlay={(index) => onPlay(index, false)} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} {likedIds} {pendingIds} onToggleLike={loggedIn ? onToggleLike : undefined} onToggleSaved={loggedIn ? onToggleSaved : undefined} onContextMenu={onTrackMenu} onRemoveTrack={playlist.owned ? onRemoveTrack : undefined} onMoveTrack={playlist.owned && (playlist.sort ?? 'default') === 'default' ? onMoveTrack : undefined} canReorder={playlist.owned && playlist.sortEditable && (playlist.sort ?? 'default') === 'default' && playlist.items.every(track => Boolean(track.setVideoId))} {mutationPending} />
       {:else if loadingMore}<div class="loading-inline" role="status">Cargando canciones…</div>
       {:else}<p class="no-tracks">Esta playlist todavía no tiene canciones disponibles.</p>{/if}
       {#if playlist.continuation}<div class="more"><button type="button" disabled={loadingMore} onclick={onLoadMore}>{loadingMore ? "Cargando…" : "Cargar más canciones"}</button></div>{/if}
@@ -89,7 +109,8 @@
   .eyebrow { color: #aaaab1; font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }.metadata h1 { max-width: 100%; margin: 0; color: #f7f7f8; font-size: 32px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
   .subtitle, .count { margin: 0; color: #b5b5bc; font-size: 12px; }.subtitle { font-size: 14px; font-weight: 500; }
   .description { display: -webkit-box; max-width: min(720px, 60vw); overflow: hidden; padding: 0; border: 0; color: #aaaab1; background: transparent; font: inherit; font-size: 12px; line-height: 17px; text-align: left; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; cursor: pointer; }.description span { color: #f1f1f3; font-weight: 600; }.description:hover { color: #dedee2; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 8px; }.play, .save { min-height: 34px; padding: 7px 15px; border: 1px solid var(--sideb-surface-border); border-radius: 999px; color: white; background: var(--sideb-surface); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }.play { border-color: transparent; background: var(--sideb-accent); }.play:hover, .save:hover { filter: brightness(1.12); }.play:disabled, .save:disabled { opacity: .55; cursor: wait; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; }.play, .save, .shuffle { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 7px 14px; border: 1px solid var(--sideb-surface-border); border-radius: 999px; color: white; background: var(--sideb-surface); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }.play { border-color: transparent; background: var(--sideb-accent); }.shuffle svg { width: 16px; height: 16px; }.play:hover, .save:hover, .shuffle:hover { filter: brightness(1.12); }.play:disabled, .save:disabled, .shuffle:disabled { opacity: .55; cursor: wait; }.sort-control { display: inline-flex; align-items: center; gap: 6px; color: #aaaab1; font-size: 11px; }.sort-control select { max-width: 130px; padding: 7px 8px; border: 1px solid var(--sideb-surface-border); border-radius: 8px; color: white; background: var(--sideb-surface); font: inherit; font-size: 11px; }
+  .more-button { display: grid; width: 34px; height: 34px; place-items: center; padding: 6px; border: 1px solid var(--sideb-surface-border); border-radius: 50%; color: #dddde2; background: transparent; cursor: pointer; }.more-button svg { width: 17px; height: 17px; }.more-button:hover { color: #fff; background: var(--sideb-surface); }
   .inline-error { display: flex; align-items: center; gap: 10px; margin: 0 32px 8px; padding: 8px 12px; border-radius: 7px; color: #ffd5d5; background: #9d303033; font-size: 12px; }.inline-error button { margin-left: auto; border: 0; color: inherit; background: transparent; font: inherit; text-decoration: underline; cursor: pointer; }
   .no-tracks, .loading-inline { margin: 0; padding: 20px 32px; color: #a6a6ad; font-size: 13px; }.loading-inline { text-align: center; }
   .more { display: flex; justify-content: center; padding: 18px 32px; }.more button { padding: 8px 16px; border: 1px solid var(--sideb-surface-border); border-radius: 999px; color: white; background: var(--sideb-surface); font: inherit; cursor: pointer; }.more button:disabled { opacity: .55; }

@@ -3,6 +3,8 @@
   import DetailHeader from "./DetailHeader.svelte";
   import TrackTable from "./TrackTable.svelte";
   import DescriptionModal from "./DescriptionModal.svelte";
+  import { createMenuHandlers } from "$lib/menu/hooks";
+  import { targetFromCard } from "$lib/menu/types";
 
   interface Props {
     album: AlbumDetailDto | null; isLoading: boolean; error: string | null;
@@ -19,6 +21,7 @@
   }: Props = $props();
   let showDescription = $state(false);
   let failedCardImages = $state(new Set<string>());
+  const createMenu = createMenuHandlers();
   function canOpenCard(card: BrowseCardDto) {
     return ["artist", "album"].includes(card.kind) || (card.kind === "playlist" && Boolean(onOpenPlaylist)) || (["song", "video"].includes(card.kind) && Boolean(onPlaySong));
   }
@@ -43,12 +46,16 @@
   {:else if showEmpty}
     <section class="state"><div class="state-icon">♫</div><h2>Álbum no disponible</h2><p>Vuelve atrás o intenta cargarlo de nuevo.</p><button type="button" class="retry" onclick={onRetry}>Reintentar</button></section>
   {:else if album}
+    {@const albumCard = { kind: 'album', id: album.browseId, title: album.title, subtitle: album.artist, thumbnail: album.thumbnail, duration: null }}
+    {@const albumMenu = createMenu(() => ({ kind: 'album', card: albumCard, detail: album }), { view: 'album_detail', currentId: album.browseId })}
     <div class="scroll-content">
-      <DetailHeader {album} {loggedIn} {onPlay} {onOpenArtist} {onToggleLibrary} onDescription={() => showDescription = true} />
+      <div role="group" oncontextmenu={albumMenu.onContextMenu}>
+        <DetailHeader {album} {loggedIn} {onPlay} {onOpenArtist} {onToggleLibrary} onDescription={() => showDescription = true} />
+      </div>
       <div class="header-divider" aria-hidden="true"></div>
       {#if error}<div class="inline-error" role="status">No se pudo actualizar: {error}<button type="button" onclick={onRetry}>Reintentar</button></div>{/if}
       {#if album.items.length}
-        <TrackTable items={album.items} {currentTrackId} {isPlaying} onPlay={(index) => onPlay(index)} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} hideAlbumColumn />
+        <TrackTable items={album.items} {currentTrackId} {isPlaying} onPlay={(index) => onPlay(index)} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} hideAlbumColumn origin={{ view: 'album_detail', currentId: album.browseId }} />
       {:else}<p class="no-tracks">Este álbum todavía no tiene canciones disponibles.</p>{/if}
       {#if album.sections.length}
         <div class="sections">
@@ -64,15 +71,16 @@
                   {#each section.items as card, cardIndex (`${card.kind}-${card.id}-${cardIndex}`)}
                     {@const canNavigate = canOpenCard(card)}
                     {@const imageKey = `${card.kind}-${card.id}-${cardIndex}`}
+                    {@const menu = createMenu(() => targetFromCard(card), { view: 'album_detail', currentId: album.browseId })}
                     <article class="card">
                       {#if canNavigate}
-                        <button type="button" class="card-main" aria-label={`${card.kind === "artist" ? "Ver artista" : "Abrir álbum"}: ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => openCard(card)}>
+                        <button type="button" class="card-main" aria-label={`${card.kind === "artist" ? "Ver artista" : "Abrir álbum"}: ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => openCard(card)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
                           {#if card.thumbnail && !failedCardImages.has(imageKey)}<img class:artist-art={card.kind === "artist"} src={card.thumbnail} alt="" loading="lazy" onerror={() => failedCardImages = new Set(failedCardImages).add(imageKey)} />{:else}<div class="card-placeholder" class:artist-art={card.kind === "artist"} aria-hidden="true">♫</div>{/if}
                           <span class="card-title">{card.title}</span>
                           {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
                         </button>
                       {:else}
-                        <div class="card-main informational" aria-label={`${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`}>
+                        <div class="card-main informational" role="group" aria-label={`${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} oncontextmenu={menu.onContextMenu}>
                           {#if card.thumbnail && !failedCardImages.has(imageKey)}<img src={card.thumbnail} alt="" loading="lazy" onerror={() => failedCardImages = new Set(failedCardImages).add(imageKey)} />{:else}<div class="card-placeholder" aria-hidden="true">♫</div>{/if}
                           <span class="card-title">{card.title}</span>
                           {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}

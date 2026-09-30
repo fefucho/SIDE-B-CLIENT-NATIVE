@@ -71,6 +71,13 @@ export class SearchController {
     this.emit();
   }
 
+  restore(snapshot: SearchData) {
+    ++this.revision;
+    this.data = { ...snapshot, songs: [...snapshot.songs], albums: [...snapshot.albums], isLoading: false };
+    this.emit();
+    if (snapshot.isLoading && snapshot.lastSearchedQuery) void this.execute(snapshot.lastSearchedQuery, snapshot.mode);
+  }
+
   async execute(targetQuery: string, mode: SearchMode = this.data.mode) {
     const query = targetQuery.trim();
     if (!query) return;

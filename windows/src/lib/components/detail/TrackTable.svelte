@@ -1,11 +1,14 @@
 <script lang="ts">
   import type { SongDto } from "$lib/types";
+  import type { MenuOrigin } from "$lib/menu/types";
+  import { createMenuHandlers } from "$lib/menu/hooks";
   interface Props {
     items: SongDto[]; currentTrackId: string | null; isPlaying: boolean;
     onPlay: (index: number) => void; onOpenArtist?: (id: string) => void;
-    onOpenAlbum?: (id: string) => void; hideAlbumColumn?: boolean; numbered?: boolean; flush?: boolean;
+    onOpenAlbum?: (id: string) => void; hideAlbumColumn?: boolean; numbered?: boolean; flush?: boolean; origin?: MenuOrigin;
   }
-  let { items, currentTrackId, isPlaying, onPlay, onOpenArtist, onOpenAlbum, hideAlbumColumn = false, numbered = true, flush = false }: Props = $props();
+  let { items, currentTrackId, isPlaying, onPlay, onOpenArtist, onOpenAlbum, hideAlbumColumn = false, numbered = true, flush = false, origin = {} }: Props = $props();
+  const createMenu = createMenuHandlers();
   let failedImages = $state(new Set<number>());
   const hasAlbumColumn = $derived(!hideAlbumColumn && items.some((track) => Boolean(track.album)));
   function markImageFailed(index: number) { failedImages = new Set(failedImages).add(index); }
@@ -17,11 +20,12 @@
     <tbody>
       {#each items as track, index (track.videoId + ":" + index)}
         {@const active = currentTrackId === track.videoId}
-        <tr class:active>
+        {@const menu = createMenu(() => ({ kind: 'song', song: track }), () => origin)}
+        <tr class:active oncontextmenu={menu.onContextMenu}>
           <td class="index"><button type="button" class="row-play" aria-label={`Reproducir ${track.title}`} onclick={() => onPlay(index)}>{#if active && isPlaying}<span aria-hidden="true">♫</span>{:else if numbered}<span aria-hidden="true">{index + 1}</span>{:else}<span aria-hidden="true">▶</span>{/if}</button></td>
           <td class="track-cell">
             {#if track.thumbnail && !failedImages.has(index)}<img class="cover" src={track.thumbnail} alt="" loading="lazy" onerror={() => markImageFailed(index)} />{:else}<div class="cover fallback" aria-hidden="true">♫</div>{/if}
-            <div class="song-meta"><button class="song-title" type="button" onclick={() => onPlay(index)} title={track.title}>{track.title}</button>
+            <div class="song-meta"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={menu.onKeyDown} title={track.title}>{track.title}</button>
               <div class="artist-line">
                 {#if track.artistId && onOpenArtist}<button type="button" class="metadata-link" onclick={() => onOpenArtist!(track.artistId!)}>{track.artists}</button>
                 {:else}<span>{track.artists}</span>{/if}

@@ -1,10 +1,12 @@
 <script lang="ts">
   import type { HomeItemDto } from '$lib/types';
+  import { createMenuHandlers, targetFromHome } from '$lib/menu/hooks';
 
   export let item: HomeItemDto;
   export let onPlaySong: ((item: HomeItemDto) => void) | undefined = undefined;
   export let onOpenArtist: ((id: string) => void) | undefined = undefined;
   export let onOpenAlbum: ((id: string) => void) | undefined = undefined;
+  const menu = createMenuHandlers()(() => targetFromHome(item), { view: 'home' });
 
   let imageFailed = false;
   let lastThumbnail = item.thumbnail;
@@ -27,9 +29,9 @@
       : undefined;
 </script>
 
-<article class="compact" aria-label={`Canción: ${item.title}`}>
+<article class="compact" aria-label={`Canción: ${item.title}`} oncontextmenu={menu.onContextMenu}>
   {#if onPlaySong && item.id.trim()}
-    <button class="main" type="button" onclick={() => onPlaySong?.(item)} aria-label={`Reproducir ${item.title}`}>
+    <button class="main" type="button" onclick={() => onPlaySong?.(item)} onkeydown={menu.onKeyDown} aria-label={`Reproducir ${item.title}`}>
       <span class="art">
         {#if item.thumbnail && !imageFailed}<img src={item.thumbnail} alt="" loading="lazy" onerror={() => (imageFailed = true)} />{:else}<span aria-hidden="true">♫</span>{/if}
       </span>

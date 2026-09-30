@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { BrowseCardDto } from "$lib/types";
+  import { createMenuHandlers } from "$lib/menu/hooks";
+  import { targetFromCard } from "$lib/menu/types";
 
   interface Props {
     title: string;
@@ -27,6 +29,7 @@
   }: Props = $props();
 
   let failedImages = $state(new Set<string>());
+  const createMenu = createMenuHandlers();
 
   function canActivate(item: BrowseCardDto): boolean {
     return item.kind === "album" || item.kind === "artist" || (["song", "video"].includes(item.kind) && Boolean(onPlaySong)) || (item.kind === "playlist" && Boolean(onOpenPlaylist));
@@ -62,12 +65,13 @@
     {:else}
       <div class="grid">
         {#each items as item, index (`${item.kind}:${item.id}:${index}`)}
+          {@const menu = createMenu(() => targetFromCard(item), { view: 'catalog' })}
           {#if canActivate(item)}
-            <button class="card interactive" type="button" onclick={() => activate(item)}>
+            <button class="card interactive" type="button" onclick={() => activate(item)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
               {@render cardContent(item)}
             </button>
           {:else}
-            <article class="card" aria-label={`${item.title}; acción no disponible`}>
+            <article class="card" role="group" aria-label={`${item.title}; acción no disponible`} oncontextmenu={menu.onContextMenu}>
               {@render cardContent(item)}
             </article>
           {/if}

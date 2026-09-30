@@ -14,6 +14,7 @@ export interface AccountData {
   loadingMore: boolean; loading: Record<Channel, boolean>; errors: Record<Channel, string | null>;
   likedIds: Set<string>; pendingIds: Set<string>; actionError: string | null;
 }
+export type AccountNavigationSnapshot = Pick<AccountData, 'tab' | 'playlist' | 'playlistLoading' | 'playlistError'>;
 export function emptyAccountData(loggedIn = false): AccountData {
   return { loggedIn, tab: 'songs', songs: [], playlists: [], albums: [], artists: [], history: [],
     songContinuation: null, playlist: null, playlistLoading: false, playlistLoadingMore: false,
@@ -47,6 +48,26 @@ export class AccountController {
   private likeOverrides = new Map<string, boolean>();
   private published: (data: AccountData) => void;
   constructor(private rpc: AccountRpc, publish: (data: AccountData) => void) { this.published = publish; }
+  captureNavigation(): AccountNavigationSnapshot {
+    return { tab: this.data.tab, playlist: this.data.playlist ? { ...this.data.playlist, items: this.data.playlist.items.map(item => ({ ...item })) } : null,
+      playlistLoading: this.data.playlistLoading, playlistError: this.data.playlistError };
+  }
+  restoreNavigation(snapshot: AccountNavigationSnapshot) {
+    this.ticket('playlist');
+    this.data.tab = snapshot.tab;
+    this.data.playlist = snapshot.playlist ? { ...snapshot.playlist, items: snapshot.playlist.items.map(item => ({ ...item })) } : null;
+    this.data.playlistLoading = false;
+    this.data.playlistLoadingMore = false;
+    this.data.playlistError = snapshot.playlistError;
+    this.usedPlaylistTokens.clear();
+    this.emit();
+  }
+  invalidatePlaylist() {
+    this.ticket('playlist');
+    this.data.playlistLoading = false;
+    this.data.playlistLoadingMore = false;
+    this.emit();
+  }
   private emit() { this.published({ ...this.data, loading: { ...this.data.loading }, errors: { ...this.data.errors }, likedIds: new Set(this.data.likedIds), pendingIds: new Set(this.data.pendingIds) }); }
   private ticket(key: string) {
     const generation = this.generation;
@@ -194,10 +215,95 @@ export class AccountController {
     });
     if (changed) await this.load('playlists');
   }
-  async createPlaylist(title: string, description: string) {
+  async createPlaylist(title: string, description: string, privacy = 'PRIVATE'): Promise<string> {
     if (!this.data.loggedIn) throw new Error('Iniciá sesión para crear una playlist.');
     const generation = this.generation;
-    await this.rpc<string>('create_playlist', { title, description });
+    const id = await this.rpc<string>('create_playlist', { title, description, privacy });
     if (generation === this.generation) await this.load('playlists');
+    return id;
+  }
+
+  private playlistMutationKey(id: string) { return `playlist:${id}`; }
+
+  private async runPlaylistMutation(id: string, command: string, args: Record<string, unknown>, refresh = true) {
+    if (!this.data.loggedIn) throw new Error('Iniciá sesión para modificar esta playlist.');
+    const key = this.playlistMutationKey(id);
+    if (this.data.pendingIds.has(key)) throw new Error('Ya hay un cambio en curso para esta playlist.');
+    const generation = this.generation;
+    const playlistRevision = this.requests.get('playlist');
+    this.data.pendingIds.add(key); this.data.actionError = null; this.emit();
+    try {
+      await this.rpc<void>(command, args);
+      if (generation !== this.generation || !this.data.loggedIn) return;
+      if (refresh && this.data.playlist?.id === id && playlistRevision === this.requests.get('playlist')) await this.openPlaylist(id);
+      if (generation === this.generation) await this.load('playlists');
+    } catch (error) {
+      if (generation === this.generation) {
+        const text = message(error, 'No se pudo guardar el cambio de la playlist.');
+        this.data.actionError = text; this.emit(); throw new Error(text);
+      }
+      throw error;
+    } finally {
+      if (generation === this.generation) { this.data.pendingIds.delete(key); this.emit(); }
+    }
+  }
+
+  /** Resolve every playlist page for playback; never return a truncated queue on failure. */
+  async resolvePlaylistTracks(id: string, valid?: () => boolean): Promise<SongDto[]> {
+    const normalizedId = id.trim();
+    const protectedId = normalizedId.startsWith('VL') ? normalizedId.slice(2) : normalizedId;
+    if (!this.data.loggedIn && protectedId === 'LM') throw new Error('Iniciá sesión para reproducir Tus Me Gusta.');
+    const generation = this.generation;
+    const revision = (this.requests.get('resolve-playlist') ?? 0) + 1;
+    this.requests.set('resolve-playlist', revision);
+    const playlistRevision = this.requests.get('playlist');
+    const isValid = () => generation === this.generation
+      && revision === this.requests.get('resolve-playlist')
+      && playlistRevision === this.requests.get('playlist')
+      && (!valid || valid());
+    const stop = () => [] as SongDto[];
+    try {
+      const first = await this.rpc<PlaylistDetailDto>('get_playlist', { playlistId: id });
+      if (!isValid()) return stop();
+      let items = appendSongs([], first.items);
+      let token = first.continuation;
+      const seen = new Set<string>();
+      while (token) {
+        if (!isValid()) return stop();
+        if (seen.has(token)) break;
+        seen.add(token);
+        const page = await this.rpc<SongPage>('get_playlist_continuation', { token });
+        if (!isValid()) return stop();
+        items = appendSongs(items, page.items);
+        token = page.continuation;
+      }
+      return isValid() ? items : stop();
+    } catch (error) {
+      if (!isValid()) return stop();
+      throw error;
+    }
+  }
+
+  editPlaylistDetails(id: string, details: { name: string; description: string; privacy: string }) {
+    return this.runPlaylistMutation(id, 'edit_playlist_details', {
+      playlistId: id, name: details.name, description: details.description, privacy: details.privacy,
+    });
+  }
+  deletePlaylist(id: string) {
+    return this.runPlaylistMutation(id, 'delete_playlist', { playlistId: id }, false);
+  }
+  setPlaylistSort(id: string, sort: string) {
+    return this.runPlaylistMutation(id, 'set_playlist_sort', { playlistId: id, sort });
+  }
+  addToPlaylist(id: string, song: SongDto) {
+    return this.runPlaylistMutation(id, 'add_to_playlist', { playlistId: id, videoId: song.videoId });
+  }
+  removeFromPlaylist(id: string, song: SongDto) {
+    if (!song.setVideoId) return Promise.reject(new Error('No se pudo identificar esta canción dentro de la playlist.'));
+    return this.runPlaylistMutation(id, 'remove_from_playlist', { playlistId: id, videoId: song.videoId, setVideoId: song.setVideoId });
+  }
+  movePlaylistTrack(id: string, setVideoId: string, successorSetVideoId: string | null) {
+    if (!setVideoId) return Promise.reject(new Error('No se pudo identificar esta canción dentro de la playlist.'));
+    return this.runPlaylistMutation(id, 'move_playlist_track', { playlistId: id, setVideoId, successorSetVideoId });
   }
 }

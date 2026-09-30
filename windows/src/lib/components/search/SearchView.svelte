@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { AlbumCardDto, SongDto } from "$lib/types";
+  import type { AlbumCardDto, BrowseCardDto, SongDto } from "$lib/types";
   import type { SearchData, SearchMode } from "$lib/search/controller";
+  import { createMenuHandlers } from "$lib/menu/hooks";
 
   interface Props {
     data: SearchData;
@@ -16,6 +17,7 @@
   }
 
   let { data, backendReady, currentTrackId, isPlaying, onSubmit, onQueryChange, onModeChange, onQuickSearch, onPlaySong, onOpenAlbum }: Props = $props();
+  const createMenu = createMenuHandlers();
   function submit(event: SubmitEvent) { event.preventDefault(); onSubmit(data.query, data.mode); }
   function play(song: SongDto) { onPlaySong(song); }
 </script>
@@ -67,7 +69,8 @@
         <div class="results-header"><h2>Resultados para «{data.lastSearchedQuery}»</h2><span class="count-badge">{data.songs.length} canciones</span></div>
         <div class="song-list">
           {#each data.songs as song (song.videoId)}
-            <div class="song-row" class:is-active-track={currentTrackId === song.videoId} role="button" tabindex="0" onclick={() => play(song)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); play(song); } }} title="Reproducir canción">
+            {@const menu = createMenu(() => ({ kind: 'song', song }), { view: 'search_results' })}
+            <div class="song-row" class:is-active-track={currentTrackId === song.videoId} role="button" tabindex="0" onclick={() => play(song)} onkeydown={(event) => { menu.onKeyDown(event); if (event.key === "Enter" || event.key === " ") { event.preventDefault(); play(song); } }} oncontextmenu={menu.onContextMenu} title="Reproducir canción">
               <div class="thumb-container">{#if song.thumbnail}<img src={song.thumbnail} alt={song.title} class="thumb-img" loading="lazy" />{:else}<div class="thumb-fallback">&#9835;</div>{/if}</div>
               <div class="meta-col"><span class="song-title" title={song.title}>{song.title}</span><span class="song-artist" title={song.artists}>{song.artists}</span>{#if song.album}<span class="song-album" title={song.album}>• {song.album}</span>{/if}</div>
               <div class="extra-col">{#if currentTrackId === song.videoId && isPlaying}<span class="tag-playing">&#9658; SONANDO</span>{/if}{#if song.isVideo}<span class="tag-video">VIDEO</span>{/if}{#if song.duration}<span class="song-duration">{song.duration}</span>{/if}</div>
@@ -84,7 +87,9 @@
         <div class="results-header"><h2>Álbumes para «{data.lastSearchedQuery}»</h2><span class="count-badge">{data.albums.length} álbumes</span></div>
         <div class="album-grid">
           {#each data.albums as album (album.id)}
-            <button type="button" class="album-card" onclick={() => onOpenAlbum(album)} title={`Ver detalle de ${album.title}`}>
+            {@const card: BrowseCardDto = { kind: 'album', id: album.id, title: album.title, subtitle: album.subtitle, thumbnail: album.thumbnail, duration: null }}
+            {@const menu = createMenu(() => ({ kind: 'album', card }), { view: 'search_results' })}
+            <button type="button" class="album-card" onclick={() => onOpenAlbum(album)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown} title={`Ver detalle de ${album.title}`}>
               <div class="album-card-cover">{#if album.thumbnail}<img src={album.thumbnail} alt={album.title} class="album-card-img" loading="lazy" />{:else}<div class="album-card-fallback">&#128191;</div>{/if}</div>
               <div class="album-card-info"><span class="album-card-title">{album.title}</span>{#if album.subtitle}<span class="album-card-sub">{album.subtitle}</span>{/if}</div>
             </button>

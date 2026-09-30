@@ -2,6 +2,8 @@
   import type { BrowseCardDto } from "$lib/types";
   import type { AccountSongDto as SongDto } from "$lib/account/types";
   import AccountTrackTable from "./AccountTrackTable.svelte";
+  import { createMenuHandlers } from "$lib/menu/hooks";
+  import { targetFromCard } from "$lib/menu/types";
 
   type LibraryTab = "songs" | "playlists" | "albums" | "artists";
   interface Props {
@@ -34,6 +36,7 @@
   let titleInput: HTMLInputElement;
   let restoreFocus: HTMLElement | null = null;
   let failedImages = $state(new Set<string>());
+  const createMenu = createMenuHandlers();
   const cards = $derived(tab === "playlists" ? playlists : tab === "albums" ? albums : artists);
   const icon = $derived(tab === "playlists" ? "♫" : tab === "albums" ? "◉" : "♙");
   const emptyTitle = $derived(tab === "playlists" ? "No tenés playlists" : tab === "albums" ? "No tenés álbumes guardados" : "No tenés artistas en tu biblioteca");
@@ -125,7 +128,8 @@
       <div class="grid" class:artists-grid={tab === "artists"}>
         {#each cards as card, index (`${card.kind}-${card.id}-${index}`)}
           {@const key = `${card.kind}-${card.id}-${index}`}
-          <button class="card" type="button" aria-label={`Abrir ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => onOpenCard(card)}>
+          {@const menu = createMenu(() => targetFromCard(card), { view: 'library' })}
+          <button class="card" type="button" aria-label={`Abrir ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => onOpenCard(card)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
             {#if card.thumbnail && !failedImages.has(key)}<img class:artist-art={tab === "artists"} src={card.thumbnail} alt="" loading="lazy" onerror={() => failedImages = new Set(failedImages).add(key)} />{:else}<div class="art-fallback" class:artist-art={tab === "artists"} aria-hidden="true">{icon}</div>{/if}
             <span class="card-title">{card.title}</span>{#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
           </button>

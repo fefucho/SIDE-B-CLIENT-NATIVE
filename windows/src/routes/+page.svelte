@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, setContext } from "svelte";
   import Sidebar from "$lib/components/sidebar/Sidebar.svelte";
   import PlayerBar from "$lib/components/player/PlayerBar.svelte";
   import HomeView from "$lib/components/home/HomeView.svelte";
@@ -9,11 +9,21 @@
   import LibraryView from "$lib/components/library/LibraryView.svelte";
   import PlaylistDetailView from "$lib/components/detail/PlaylistDetailView.svelte";
   import HistoryView from "$lib/components/library/HistoryView.svelte";
-  import { AccountController, emptyAccountData } from "$lib/account/controller";
+  import { AccountController, emptyAccountData, type AccountNavigationSnapshot } from "$lib/account/controller";
+  import TitleBar from "$lib/components/shell/TitleBar.svelte";
+  import { NavigationHistory } from "$lib/navigation/history";
+  import { WindowController } from "$lib/window/controller";
+  import { MENU_CONTEXT, songFromHome, songFromQueue, type MenuService, type MenuOrigin, type MenuTarget } from "$lib/menu/types";
+  import type { MenuAction, MenuRequest } from '$lib/menu/types';
+  import { menuItems } from '$lib/menu/policy';
+  import { MenuExecutor } from '$lib/menu/executor';
+  import ContextMenu from '$lib/components/menu/ContextMenu.svelte';
+  import PlaylistEditorDialog from '$lib/components/detail/PlaylistEditorDialog.svelte';
+  import PlaylistDeleteDialog from '$lib/components/detail/PlaylistDeleteDialog.svelte';
   import { CatalogController, emptyCatalogData, type CatalogData } from "$lib/catalog/controller";
   import { HomeController, emptyHomeData } from "$lib/home/controller";
   import SearchView from "$lib/components/search/SearchView.svelte";
-  import { SearchController, emptySearchData, type SearchMode } from "$lib/search/controller";
+  import { SearchController, emptySearchData, type SearchMode, type SearchData } from "$lib/search/controller";
   import { PlaybackController, emptyPlaybackData, parseDuration } from "$lib/player/controller";
   import FullscreenNowPlaying from "$lib/components/fullscreen/FullscreenNowPlaying.svelte";
   import { invoke } from "@tauri-apps/api/core";
@@ -24,6 +34,7 @@
     BackendStatusDto,
     AuthStatusDto,
     CommandError,
+    PlaylistDetailDto,
   } from "$lib/types";
 
   type PrimaryNav = "home" | "search" | "library" | "likes" | "history";
@@ -33,6 +44,9 @@
   let activeView = $state<ActiveView>("feed");
   let sidebarCollapsed = $state(false);
   let isFullscreenOpen = $state(false);
+  let selectedPanel = $state<'queue' | 'lyrics' | 'related'>('queue');
+  let shellError = $state<string | null>(null);
+  const nativeWindow = new WindowController();
   let accountData = $state(emptyAccountData());
   const account = new AccountController((command, args) => invoke(command, args), data => { accountData = data; });
   let lastPlaylistId = $state<string | null>(null);
@@ -59,15 +73,44 @@
   const catalogError = $derived(catalogData.error);
   type NavigationSnapshot = {
     view: ActiveView; primary: PrimaryNav; scroll: number;
-    details: CatalogData; playlistId: string | null;
+    details: CatalogData; playlistId: string | null; account: AccountNavigationSnapshot; search: SearchData;
   };
-  let navigationHistory: NavigationSnapshot[] = [];
+  const navigationHistory = new NavigationHistory<NavigationSnapshot>();
+  let canBack = $state(false);
+  let canForward = $state(false);
+  let navigationRevision = 0;
+  let collectionPlayRevision = 0;
+  let menuRequest = $state<MenuRequest | null>(null);
+  let menuActionPending = $state(false);
+  let editingPlaylist = $state<PlaylistDetailDto | null>(null);
+  let deletingPlaylist = $state<PlaylistDetailDto | null>(null);
+  let newPlaylistSong = $state<SongDto | null>(null);
+  let createdPlaylistForSong: string | null = null;
+  let menuNotice = $state<string | null>(null);
+  const menuService: MenuService = {
+    open(event, target, origin = {}) {
+      event.preventDefault(); event.stopPropagation();
+      if (menuActionPending || editingPlaylist || deletingPlaylist || newPlaylistSong) return;
+      const anchor = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+      const rect = anchor?.getBoundingClientRect();
+      const keyboard = event instanceof KeyboardEvent || (event instanceof MouseEvent && event.detail === 0 && event.button !== 2);
+      menuRequest = { x: keyboard ? rect?.left ?? 20 : (event as MouseEvent).clientX,
+        y: keyboard ? rect?.bottom ?? 60 : (event as MouseEvent).clientY, target,
+        focus: document.activeElement instanceof HTMLElement ? document.activeElement : anchor,
+        origin: { view: activeView, currentId: activeView === 'album_detail' ? lastAlbumBrowseId : activeView === 'artist_detail' ? lastArtistBrowseId : lastPlaylistId,
+          currentQueueEntryId: playbackState.queue.currentIndex == null ? null : playbackState.queue.items[playbackState.queue.currentIndex]?.entryId,
+          ...origin } };
+    },
+  };
+  setContext(MENU_CONTEXT, menuService);
 
   // Estado Backend
   let backendStatus = $state<BackendStatusDto | null>(null);
   let statusError = $state<string | null>(null);
   let isRetryingInit = $state(false);
   let authStatus = $state<AuthStatusDto>({ state: "guest", name: null, email: null, thumbnail: null, message: null });
+  const menu = $derived(menuRequest ? menuItems(menuRequest.target, menuRequest.origin,
+    { loggedIn: authStatus.state === 'ready', likedIds: accountData.likedIds, playlists: accountData.playlists }) : []);
 
   let playbackState = $state(emptyPlaybackData());
   let playbackError = $state<string | null>(null);
@@ -92,7 +135,10 @@
       player.invalidatePending();
       account.reset(next.state === "ready");
       lastPlaylistId = null;
-      navigationHistory = [];
+      navigationHistory.clear(); updateHistoryAvailability();
+      ++navigationRevision; ++collectionPlayRevision;
+      menuRequest = null; editingPlaylist = null; deletingPlaylist = null; newPlaylistSong = null;
+      createdPlaylistForSong = null; shellError = null; menuNotice = null;
       activeView = primaryNav === "home" ? "feed" : primaryNav === "search" ? "search_results" : primaryNav === "history" ? "history" : primaryNav === "likes" ? "playlist_detail" : "library";
       if (backendStatus?.ready) { loadHomePage(); void account.initialize(); }
       if (next.state === "ready") {
@@ -169,7 +215,7 @@
   function loadMoreHome() { return home.loadMore(); }
   function executeSearch(targetQuery: string, mode: SearchMode = searchData.mode) {
     if (!targetQuery.trim()) return;
-    invalidateDetails(); navigationHistory = [];
+    if (activeView !== 'search_results' || searchData.lastSearchedQuery !== targetQuery.trim() || searchData.mode !== mode) pushNavigation();
     primaryNav = "search"; activeView = "search_results";
     scrollContentToTop();
     void search.execute(targetQuery, mode);
@@ -177,8 +223,8 @@
 
   function handleSwitchNav(nav: PrimaryNav) {
     if (nav === 'library' || nav === 'likes' || nav === 'history') { openAccountNav(nav); return; }
-    navigationHistory = [];
-    invalidateDetails();
+    if ((nav === 'home' && activeView === 'feed') || (nav === 'search' && activeView === 'search_results')) return;
+    pushNavigation();
     primaryNav = nav;
     if (nav === "home") {
       activeView = "feed";
@@ -196,8 +242,21 @@
   }
 
   async function handleWindowKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]')) return;
     if (event.key === "Escape" && isFullscreenOpen) {
-      isFullscreenOpen = false;
+      event.preventDefault();
+      await setPlayerFullscreen(false);
+      return;
+    }
+    if (event.key === 'F11') {
+      event.preventDefault();
+      try { await nativeWindow.toggleNativeFullscreen(); } catch (error) { shellError = extractErrorMessage(error, 'No se pudo cambiar la ventana.'); }
+      return;
+    }
+    const editable = event.target instanceof HTMLElement && (event.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target.tagName));
+    if (!editable && event.altKey && !event.ctrlKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      if (event.key === 'ArrowLeft') void goBackFromDetail(); else void goForward();
       return;
     }
     if (event.ctrlKey && !event.altKey && !event.metaKey && event.key.toLowerCase() === "k") {
@@ -217,46 +276,66 @@
 
   function invalidateDetails() { catalog.invalidate(); }
 
+  function updateHistoryAvailability() { canBack = navigationHistory.canBack; canForward = navigationHistory.canForward; }
+  function captureNavigation(): NavigationSnapshot {
+    return { view: activeView, primary: primaryNav,
+      scroll: document.querySelector<HTMLElement>('.content-column')?.scrollTop ?? 0,
+      details: catalog.data, playlistId: lastPlaylistId, account: account.captureNavigation(),
+      search: { ...searchData, songs: [...searchData.songs], albums: [...searchData.albums] } };
+  }
   function pushNavigation() {
-    navigationHistory.push({ view: activeView, primary: primaryNav,
-      scroll: document.querySelector<HTMLElement>(".content-column")?.scrollTop ?? 0,
-      details: catalog.data, playlistId: lastPlaylistId });
-    if (navigationHistory.length > 40) navigationHistory.shift();
+    navigationHistory.visit(captureNavigation()); updateHistoryAvailability();
+    ++navigationRevision; ++collectionPlayRevision;
     invalidateDetails();
+    search.invalidate(); account.invalidatePlaylist();
+    menuRequest = null;
   }
 
   async function openAlbumDetail(id: string, _origin?: "home" | "search", remember = true) {
     if (!id.trim()) return;
+    if (remember && activeView === 'album_detail' && lastAlbumBrowseId === id) return;
     if (remember) pushNavigation();
     activeView = "album_detail"; scrollContentToTop();
     await catalog.openAlbum(id);
   }
   async function openArtistDetail(id: string, remember = true) {
     if (!id.trim()) return;
+    if (remember && activeView === 'artist_detail' && lastArtistBrowseId === id) return;
     if (remember) pushNavigation();
     activeView = "artist_detail"; scrollContentToTop();
     await catalog.openArtist(id);
   }
   async function openCatalog(id: string, params: string | null, title: string, remember = true) {
     if (!id.trim()) return;
+    if (remember && activeView === 'catalog' && catalogTarget?.id === id && catalogTarget.params === params) return;
     if (remember) pushNavigation();
     activeView = "catalog"; scrollContentToTop();
     await catalog.openGrid(id, params, title);
   }
 
   async function goBackFromDetail() {
-    invalidateDetails();
-    const previous = navigationHistory.pop();
-    if (!previous) { handleSwitchNav(primaryNav === 'likes' ? 'home' : primaryNav); return; }
+    if (isFullscreenOpen) await setPlayerFullscreen(false);
+    const previous = navigationHistory.back(captureNavigation()); updateHistoryAvailability();
+    if (previous) await restoreNavigation(previous);
+  }
+  async function goForward() {
+    if (isFullscreenOpen) await setPlayerFullscreen(false);
+    const next = navigationHistory.forward(captureNavigation()); updateHistoryAvailability();
+    if (next) await restoreNavigation(next);
+  }
+  async function restoreNavigation(previous: NavigationSnapshot) {
+    const revision = ++navigationRevision; ++collectionPlayRevision;
+    invalidateDetails(); search.invalidate(); account.invalidatePlaylist();
     activeView = previous.view; primaryNav = previous.primary;
     catalog.restore(previous.details);
+    search.restore(previous.search); account.restoreNavigation(previous.account);
     lastPlaylistId = previous.playlistId;
-    if (activeView === 'playlist_detail' && lastPlaylistId) void account.openPlaylist(lastPlaylistId);
+    if (activeView === 'playlist_detail' && lastPlaylistId && !accountData.playlist && !accountData.playlistError) void account.openPlaylist(lastPlaylistId);
     if (activeView === "album_detail" && !selectedAlbum && lastAlbumBrowseId && !albumError) void openAlbumDetail(lastAlbumBrowseId, undefined, false);
     if (activeView === "artist_detail" && !selectedArtist && lastArtistBrowseId && !artistError) void openArtistDetail(lastArtistBrowseId, false);
     if (activeView === "catalog" && !catalogItems.length && catalogTarget && !catalogError) void openCatalog(catalogTarget.id, catalogTarget.params, catalogTarget.title, false);
     await tick();
-    document.querySelector<HTMLElement>(".content-column")?.scrollTo({ top: previous.scroll });
+    if (revision === navigationRevision) document.querySelector<HTMLElement>(".content-column")?.scrollTo({ top: previous.scroll });
   }
 
   async function toggleAlbumLibrary() {
@@ -268,7 +347,7 @@
     catch (error) { throw new Error(extractErrorMessage(error, "No se pudo actualizar la biblioteca.")); }
     if (revision !== sessionRevision) return;
     catalog.updateAlbum(current => current.browseId === album.browseId ? { ...current, inLibrary: save } : current);
-    for (const snapshot of navigationHistory) if (snapshot.details.album?.browseId === album.browseId) snapshot.details.album = { ...snapshot.details.album, inLibrary: save };
+    navigationHistory.mapSnapshots(snapshot => ({ ...snapshot, details: { ...snapshot.details, album: snapshot.details.album?.browseId === album.browseId ? { ...snapshot.details.album, inLibrary: save } : snapshot.details.album } }));
     void account.load('albums');
   }
 
@@ -281,7 +360,7 @@
     catch (error) { throw new Error(extractErrorMessage(error, "No se pudo actualizar la suscripción.")); }
     if (revision !== sessionRevision) return;
     catalog.updateArtist(current => current.channelId === artist.channelId ? { ...current, subscribed: subscribe } : current);
-    for (const snapshot of navigationHistory) if (snapshot.details.artist?.channelId === artist.channelId) snapshot.details.artist = { ...snapshot.details.artist, subscribed: subscribe };
+    navigationHistory.mapSnapshots(snapshot => ({ ...snapshot, details: { ...snapshot.details, artist: snapshot.details.artist?.channelId === artist.channelId ? { ...snapshot.details.artist, subscribed: subscribe } : snapshot.details.artist } }));
     void account.load('artists');
   }
 
@@ -291,6 +370,7 @@
       entryId: crypto.randomUUID(), videoId: song.videoId, title: song.title,
       artists: song.artists || fallbackArtist, thumbnail: song.thumbnail || fallbackThumbnail,
       duration: song.duration ? parseDuration(song.duration) : null,
+      artistId: song.artistId, albumId: song.albumId, album: song.album,
     }));
     if (!entries.length) throw new Error("No hay canciones disponibles para reproducir.");
     let startIndex = indexed.findIndex((entry) => entry.originalIndex === index);
@@ -307,17 +387,22 @@
   }
 
   function playAlbum(index: number, shuffle = false) {
-    if (selectedAlbum) void playCollection(selectedAlbum.items, index,
-      {kind: "album", id: selectedAlbum.browseId, title: selectedAlbum.title}, shuffle, selectedAlbum.thumbnail, selectedAlbum.artist ?? "").catch(() => {});
+    ++collectionPlayRevision;
+    const album = selectedAlbum;
+    if (album) void playCollection(album.items.map(song => ({ ...song, artistId: song.artistId ?? album.artistId,
+      albumId: song.albumId ?? album.browseId, album: song.album ?? album.title })), index,
+      {kind: "album", id: album.browseId, title: album.title}, shuffle, album.thumbnail, album.artist ?? "").catch(() => {});
   }
 
   function playArtist(index: number, shuffle = false) {
-    if (selectedArtist) void playCollection(selectedArtist.topSongs, index,
+    ++collectionPlayRevision;
+    if (selectedArtist) void playCollection(selectedArtist.topSongs.map(song => ({ ...song, artistId: song.artistId ?? selectedArtist!.channelId })), index,
       {kind: "artist", id: selectedArtist.channelId, title: selectedArtist.name}, shuffle, selectedArtist.thumbnail, selectedArtist.name).catch(() => {});
   }
 
   function openAccountNav(destination: 'library' | 'likes' | 'history') {
-    navigationHistory = []; invalidateDetails(); primaryNav = destination;
+    if (primaryNav === destination && (activeView === 'library' || activeView === 'history' || activeView === 'playlist_detail' && lastPlaylistId === 'LM')) return;
+    pushNavigation(); primaryNav = destination;
     if (destination === 'likes') { activeView = 'playlist_detail'; lastPlaylistId = 'LM'; void account.openPlaylist('LM'); }
     else if (destination === 'library') { activeView = 'library'; void account.load(accountData.tab); }
     else { activeView = 'history'; void account.load('history'); }
@@ -325,6 +410,7 @@
   }
   function openPlaylist(id: string, remember = true) {
     if (!id.trim()) return;
+    if (remember && activeView === 'playlist_detail' && lastPlaylistId?.replace(/^VL/, '') === id.replace(/^VL/, '')) return;
     if (remember) pushNavigation();
     activeView = 'playlist_detail'; lastPlaylistId = id; scrollContentToTop(); void account.openPlaylist(id);
   }
@@ -334,11 +420,24 @@
     else openPlaylist(card.id);
   }
   function playLibrarySong(index: number) {
+    ++collectionPlayRevision;
     void playCollection(accountData.songs, index, { kind: 'library', id: 'FEmusic_liked_videos', title: 'Biblioteca' }).catch(() => {});
   }
-  function playPlaylistSong(index: number) {
+  async function playPlaylistSong(index: number, shuffle = false) {
     const playlist = accountData.playlist;
-    if (playlist) void playCollection(playlist.items, index, { kind: 'playlist', id: playlist.id, title: playlist.title }, false, playlist.thumbnail).catch(() => {});
+    if (!playlist) return;
+    const revision = ++collectionPlayRevision;
+    const session = sessionRevision; const navigation = navigationRevision;
+    const valid = () => revision === collectionPlayRevision && session === sessionRevision && navigation === navigationRevision;
+    try {
+      const tracks = await account.resolvePlaylistTracks(playlist.id, valid);
+      if (!valid()) return;
+      const selected = playlist.items[index];
+      const currentIndex = selected?.setVideoId ? tracks.findIndex(song => song.setVideoId === selected.setVideoId)
+        : tracks[index]?.videoId === selected?.videoId ? index : tracks.findIndex(song => song.videoId === selected?.videoId);
+      if (!shuffle && currentIndex < 0) throw new Error('Esta canción ya no está disponible en la playlist. Actualizá la lista.');
+      await playCollection(tracks, Math.max(0, currentIndex), { kind: 'playlist', id: playlist.id, title: playlist.title }, shuffle, playlist.thumbnail);
+    } catch (error) { if (valid()) shellError = extractErrorMessage(error, 'No se pudo reproducir la playlist completa.'); }
   }
 
   async function startArtistRadio() {
@@ -346,25 +445,140 @@
     if (!artist?.radioPlaylistId) return;
     const revision = sessionRevision;
     const identity = catalog.captureIdentity();
+    const playRevision = ++collectionPlayRevision;
     try {
       const items = await invoke<SongDto[]>("get_artist_radio", { playlistId: artist.radioPlaylistId });
-      if (revision !== sessionRevision || !catalog.isCurrentIdentity(identity)) return;
-      await playCollection(items, 0, {kind: "radio", id: artist.radioPlaylistId, title: `Mix de ${artist.name}`});
+      if (revision !== sessionRevision || playRevision !== collectionPlayRevision || !catalog.isCurrentIdentity(identity)) return;
+      await playCollection(items, 0, {kind: "mix", id: artist.radioPlaylistId, title: `Mix de ${artist.name}`});
     } catch (error) { throw new Error(extractErrorMessage(error, "No se pudo iniciar el mix.")); }
   }
 
   async function handlePlaySong(videoId: string,
-    meta?: { title?: string; artists?: string; thumbnail?: string | null; duration?: string | null }) {
+    meta?: { title?: string; artists?: string; thumbnail?: string | null; duration?: string | null; artistId?: string | null; albumId?: string | null; album?: string | null }) {
+    ++collectionPlayRevision;
     await player.playSong({ videoId, title: meta?.title ?? "Canción", artists: meta?.artists ?? "",
-      thumbnail: meta?.thumbnail ?? null, duration: meta?.duration ?? null }).catch(() => {});
+      thumbnail: meta?.thumbnail ?? null, duration: meta?.duration ?? null,
+      artistId: meta?.artistId, albumId: meta?.albumId, album: meta?.album }).catch(() => {});
   }
-  function playQueueIndex(index: number) { void player.playQueueIndex(index).catch(() => {}); }
-  function handleNext() { return player.next(); }
-  function handlePrevious() { return player.previous(); }
-  function handleTogglePlay() { return player.toggle().catch(() => {}); }
-  function handleRetryPlayback() { return player.retry().catch(() => {}); }
+  function playQueueIndex(index: number) { ++collectionPlayRevision; void player.playQueueIndex(index).catch(() => {}); }
+  function handleNext() { ++collectionPlayRevision; return player.next(); }
+  function handlePrevious() { ++collectionPlayRevision; return player.previous(); }
+  function handleTogglePlay() { ++collectionPlayRevision; return player.toggle().catch(() => {}); }
+  function handleRetryPlayback() { ++collectionPlayRevision; return player.retry().catch(() => {}); }
   function handleSeek(seconds: number) { return player.seek(seconds); }
   function handleVolumeChange(volume: number) { return player.setVolume(volume); }
+
+  async function setPlayerFullscreen(open: boolean, panel = selectedPanel) {
+    shellError = null;
+    try {
+      if (open) { selectedPanel = panel; await nativeWindow.enterPlayerFullscreen(); isFullscreenOpen = true; }
+      else { await nativeWindow.exitPlayerFullscreen(); isFullscreenOpen = false; }
+    } catch (error) { shellError = extractErrorMessage(error, 'No se pudo cambiar el fullscreen.'); }
+  }
+  function handleMouseNavigation(event: MouseEvent) {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    if (event.type !== 'mousedown' || document.querySelector('[role="dialog"], [role="menu"]')) return;
+    if (event.button === 3) void goBackFromDetail(); else void goForward();
+  }
+
+  function closeMenu(restoreFocus = true) {
+    const focus = menuRequest?.focus; menuRequest = null;
+    if (restoreFocus && focus?.isConnected) focus.focus();
+  }
+  function patchPlaylistSnapshots(id: string, removed = false) {
+    navigationHistory.mapSnapshots(snapshot => {
+      if (snapshot.playlistId?.replace(/^VL/, '') !== id.replace(/^VL/, '')) return snapshot;
+      if (removed) return { ...snapshot, view: 'library', primary: 'library', playlistId: null, account: { ...snapshot.account, playlist: null } };
+      return { ...snapshot, account: { ...snapshot.account, playlistLoading: false, playlistError: null,
+        playlist: accountData.playlist?.id.replace(/^VL/, '') === id.replace(/^VL/, '') ? account.captureNavigation().playlist : null } };
+    });
+  }
+  const menuExecutor = new MenuExecutor({
+    rpc: (command, args) => invoke(command, args),
+    begin(playIntent) {
+      if (playIntent) ++collectionPlayRevision;
+      const play = collectionPlayRevision, session = sessionRevision, navigation = navigationRevision;
+      return () => play === collectionPlayRevision && session === sessionRevision && navigation === navigationRevision;
+    },
+    resolvePlaylist: (id, valid) => account.resolvePlaylistTracks(id, valid),
+    play: (tracks, source, shuffle, artwork) => playCollection(tracks, 0, source, shuffle, artwork),
+    radio: song => player.startRadio(song), enqueue: (tracks, position) => player.enqueue(tracks, position),
+    removeQueue: id => player.removeQueueEntry(id), like: song => account.toggleLike(song), saveSong: song => account.toggleSaved(song),
+    addPlaylist: (id, song) => account.addToPlaylist(id, song),
+    removePlaylistSong: async (id, song) => { await account.removeFromPlaylist(id, song); patchPlaylistSnapshots(id); },
+    sortPlaylist: async (id, sort) => { await account.setPlaylistSort(id, sort); patchPlaylistSnapshots(id); },
+    async saveCollection(target) {
+      if (target.kind !== 'album' && target.kind !== 'playlist') return;
+      const detail = target.detail; if (!detail || authStatus.state !== 'ready') throw new Error('Iniciá sesión para guardar esta colección.');
+      const id = target.kind === 'album' ? target.detail?.playlistId : target.card.id;
+      if (!id) throw new Error('Esta colección no ofrece una acción de biblioteca.');
+      const revision = sessionRevision;
+      await invoke('toggle_album_library', { playlistId: id, save: !detail.inLibrary });
+      if (revision !== sessionRevision) return;
+      if (target.kind === 'album') {
+        catalog.updateAlbum(album => album.browseId === target.card.id ? { ...album, inLibrary: !detail.inLibrary } : album);
+        navigationHistory.mapSnapshots(snapshot => ({ ...snapshot, details: { ...snapshot.details, album: snapshot.details.album?.browseId === target.card.id ? { ...snapshot.details.album, inLibrary: !detail.inLibrary } : snapshot.details.album } }));
+        void account.load('albums');
+      } else {
+        if (lastPlaylistId?.replace(/^VL/, '') === target.card.id.replace(/^VL/, '')) await account.refreshPlaylist(target.card.id);
+        patchPlaylistSnapshots(target.card.id); void account.load('playlists');
+      }
+    },
+    async subscribe(artist) {
+      const revision = sessionRevision;
+      await invoke('set_artist_subscription', { channelId: artist.channelId, subscribe: !artist.subscribed });
+      if (revision !== sessionRevision) return;
+      catalog.updateArtist(current => current.channelId === artist.channelId ? { ...current, subscribed: !artist.subscribed } : current);
+      navigationHistory.mapSnapshots(snapshot => ({ ...snapshot, details: { ...snapshot.details, artist: snapshot.details.artist?.channelId === artist.channelId ? { ...snapshot.details.artist, subscribed: !artist.subscribed } : snapshot.details.artist } }));
+      void account.load('artists');
+    },
+    open: (kind, id) => kind === 'album' ? openAlbumDetail(id) : kind === 'artist' ? openArtistDetail(id) : openPlaylist(id),
+    editPlaylist: playlist => { editingPlaylist = playlist; }, deletePlaylist: playlist => { deletingPlaylist = playlist; },
+    newPlaylist: song => { createdPlaylistForSong = null; newPlaylistSong = song; },
+    async copy(url) { await navigator.clipboard.writeText(url); menuNotice = 'Enlace copiado'; },
+  });
+  async function executeMenu(action: MenuAction) {
+    const request = menuRequest; if (!request || menuActionPending) return;
+    closeMenu(false); menuActionPending = true; shellError = null; menuNotice = null;
+    const revision = sessionRevision;
+    try { await menuExecutor.execute(action, request.target, request.origin); }
+    catch (error) { if (revision === sessionRevision) shellError = extractErrorMessage(error, 'No se pudo completar la acción.'); }
+    finally {
+      menuActionPending = false;
+      if (!editingPlaylist && !deletingPlaylist && !newPlaylistSong && request.focus?.isConnected) request.focus.focus();
+    }
+  }
+  function openNowPlayingMenu(event: MouseEvent) {
+    if (playbackState.currentTrack) menuService.open(event, { kind: 'song', song: songFromQueue(playbackState.currentTrack) }, { nowPlaying: true });
+  }
+  function openPlaylistMenu(event: MouseEvent | KeyboardEvent) {
+    const detail = accountData.playlist; if (!detail) return;
+    menuService.open(event, { kind: 'playlist', card: { id: detail.id, kind: 'playlist', title: detail.title, subtitle: detail.subtitle, thumbnail: detail.thumbnail, duration: null }, detail });
+  }
+  function openPlaylistTrackMenu(event: MouseEvent | KeyboardEvent, song: SongDto) {
+    menuService.open(event, { kind: 'song', song }, { playlistId: accountData.playlist?.id, playlistOwned: accountData.playlist?.owned });
+  }
+  async function savePlaylistDetails(details: { name: string; description: string; privacy: string }) {
+    const playlist = editingPlaylist; if (!playlist) return;
+    await account.editPlaylistDetails(playlist.id, details); patchPlaylistSnapshots(playlist.id);
+  }
+  async function deleteSelectedPlaylist() {
+    const playlist = deletingPlaylist; if (!playlist) return;
+    await account.deletePlaylist(playlist.id); patchPlaylistSnapshots(playlist.id, true);
+    if (activeView === 'playlist_detail' && lastPlaylistId?.replace(/^VL/, '') === playlist.id.replace(/^VL/, '')) openAccountNav('library');
+  }
+  async function createPlaylistFromSong(details: { name: string; description: string; privacy: string }) {
+    const song = newPlaylistSong; if (!song) return;
+    const revision = sessionRevision;
+    const existingId = createdPlaylistForSong;
+    const id = existingId ?? await account.createPlaylist(details.name, details.description, details.privacy);
+    if (revision !== sessionRevision) return;
+    createdPlaylistForSong = id;
+    if (existingId) await account.editPlaylistDetails(id, details);
+    if (revision !== sessionRevision) return;
+    await account.addToPlaylist(id, song);
+  }
 
   let unlistenAuth: UnlistenFn | null = null;
   let mounted = false;
@@ -374,6 +588,8 @@
     checkBackendStatus();
     invoke<AuthStatusDto>("get_auth_status").then(applyAuthStatus).catch(() => {});
     window.addEventListener("keydown", handleWindowKeydown);
+    window.addEventListener('mousedown', handleMouseNavigation);
+    window.addEventListener('auxclick', handleMouseNavigation);
 
     void player.connect();
 
@@ -384,6 +600,8 @@
       mounted = false;
       account.reset(false);
       window.removeEventListener("keydown", handleWindowKeydown);
+      window.removeEventListener('mousedown', handleMouseNavigation);
+      window.removeEventListener('auxclick', handleMouseNavigation);
       void player.dispose();
       home.reset();
       search.reset();
@@ -394,6 +612,8 @@
 </script>
 
 <div class="app-frame" class:sidebar-collapsed={sidebarCollapsed} class:fullscreen-open={isFullscreenOpen}>
+  <TitleBar {canBack} {canForward} {sidebarCollapsed} onBack={goBackFromDetail} onForward={goForward}
+    onToggleSidebar={() => { if (isFullscreenOpen) void setPlayerFullscreen(false); sidebarCollapsed = !sidebarCollapsed; }} />
   <Sidebar
     activeDestination={activeView === 'playlist_detail' ? lastPlaylistId === 'LM' ? 'likes' : 'playlist' : activeView === 'library' ? 'library' : activeView === 'history' ? 'history' : activeView === 'artist_detail' ? 'artist' : activeView === 'album_detail' || activeView === 'catalog' ? 'album' : primaryNav}
     onHome={() => handleSwitchNav("home")}
@@ -411,17 +631,6 @@
     onOpenPlaylist={openPlaylist} onOpenAlbum={openAlbumDetail}
   />
   <div class="content-column">
-    <div class="shell-toolbar">
-      <button
-        type="button"
-        class="sidebar-toggle"
-        onclick={() => (sidebarCollapsed = !sidebarCollapsed)}
-        aria-label={sidebarCollapsed ? "Expandir barra lateral" : "Contraer barra lateral"}
-        title={sidebarCollapsed ? "Expandir barra lateral" : "Contraer barra lateral"}
-      >
-        ☰
-      </button>
-    </div>
 <main class="shell" class:home-shell={activeView !== "search_results"}>
   {#if activeView === "search_results"}
   <header class="header">
@@ -465,6 +674,7 @@
   {/if}
 
   {#if accountData.actionError}<div class="account-action-error" role="alert">{accountData.actionError}</div>{/if}
+  {#if shellError}<div class="account-action-error shell-error" role="alert">{shellError}<button type="button" aria-label="Cerrar error" onclick={() => shellError = null}>×</button></div>{/if}
   {#if activeView === 'library'}
     <LibraryView loggedIn={authStatus.state === 'ready'} tab={accountData.tab}
       songs={accountData.songs} playlists={accountData.playlists} albums={accountData.albums} artists={accountData.artists}
@@ -472,10 +682,10 @@
       continuation={accountData.tab === 'songs' ? accountData.songContinuation : null}
       currentTrackId={playbackState.currentTrack?.videoId ?? null} isPlaying={playbackState.isPlaying}
       likedIds={accountData.likedIds} pendingIds={accountData.pendingIds}
-      onTab={(tab) => account.setTab(tab)} onRefresh={() => account.load(accountData.tab)} onLoadMore={() => account.loadMoreSongs()}
+      onTab={(tab) => { if (tab !== accountData.tab) pushNavigation(); account.setTab(tab); }} onRefresh={() => account.load(accountData.tab)} onLoadMore={() => account.loadMoreSongs()}
       onPlay={playLibrarySong} onOpenCard={openLibraryCard} onOpenArtist={openArtistDetail} onOpenAlbum={openAlbumDetail}
       onToggleLike={(song) => account.toggleLike(song)} onToggleSaved={(song) => account.toggleSaved(song)}
-      onCreatePlaylist={(title, description) => account.createPlaylist(title, description)} onLogin={handleLogin} />
+      onCreatePlaylist={async (title, description) => { await account.createPlaylist(title, description); }} onLogin={handleLogin} />
   {:else if activeView === 'playlist_detail'}
     {#key lastPlaylistId}
       <PlaylistDetailView playlist={accountData.playlist} loading={accountData.playlistLoading} loadingMore={accountData.playlistLoadingMore}
@@ -484,13 +694,18 @@
         likedIds={accountData.likedIds} pendingIds={accountData.pendingIds}
         onBack={goBackFromDetail} onRetry={() => lastPlaylistId && account.refreshPlaylist(lastPlaylistId)} onLoadMore={() => account.loadMorePlaylist()}
         onPlay={playPlaylistSong} onToggleLike={(song) => account.toggleLike(song)} onToggleSaved={(song) => account.toggleSaved(song)}
+        onOpenMenu={openPlaylistMenu} onTrackMenu={openPlaylistTrackMenu}
+        mutationPending={menuActionPending || [...accountData.pendingIds].some(id => id.startsWith('playlist:'))}
+        onSortChange={async (sort) => { const id = accountData.playlist?.id; if (id) { await account.setPlaylistSort(id, sort); patchPlaylistSnapshots(id); } }}
+        onRemoveTrack={(song) => { const id = accountData.playlist?.id; if (id) void account.removeFromPlaylist(id, song).then(() => patchPlaylistSnapshots(id)).catch(() => {}); }}
+        onMoveTrack={(setVideoId, successorSetVideoId) => { const id = accountData.playlist?.id; if (id) void account.movePlaylistTrack(id, setVideoId, successorSetVideoId).then(() => patchPlaylistSnapshots(id)).catch(() => {}); }}
         onToggleLibrary={() => account.togglePlaylistLibrary()} onOpenArtist={openArtistDetail} onOpenAlbum={openAlbumDetail} onLogin={handleLogin} />
     {/key}
   {:else if activeView === 'history'}
     <HistoryView loggedIn={authStatus.state === 'ready'} groups={accountData.history} loading={accountData.loading.history} error={accountData.errors.history}
       currentTrackId={playbackState.currentTrack?.videoId ?? null} isPlaying={playbackState.isPlaying}
       likedIds={accountData.likedIds} pendingIds={accountData.pendingIds} onLogin={handleLogin} onRefresh={() => account.load('history')}
-      onPlay={(items, index) => { void playCollection(items, index, {kind:'history',id:'history',title:'Historial'}).catch(() => {}); }}
+      onPlay={(items, index) => { ++collectionPlayRevision; void playCollection(items, index, {kind:'history',id:'history',title:'Historial'}).catch(() => {}); }}
       onToggleLike={(song) => account.toggleLike(song)} onToggleSaved={(song) => account.toggleSaved(song)}
       onOpenArtist={openArtistDetail} onOpenAlbum={openAlbumDetail} />
   {:else if activeView === "album_detail"}
@@ -540,12 +755,7 @@
       onSelectChip={(params) => loadHomePage(params)}
       onRetry={() => loadHomePage(homeData.chipParams)}
       onOpenAlbum={(browseId) => openAlbumDetail(browseId, "home")}
-      onPlaySong={(item) => handlePlaySong(item.id, {
-        title: item.title,
-        artists: item.artists ?? item.subtitle ?? "",
-        thumbnail: item.thumbnail,
-        duration: item.duration,
-      })}
+      onPlaySong={(item) => { ++collectionPlayRevision; void player.startRadio(songFromHome(item)).catch(() => {}); }}
     />
 
   <!-- VISTA 3: BUSCAR (Canciones y Álbumes con detalle W03/W04) -->
@@ -560,7 +770,10 @@
 </main>
 
 <div class="player-dock">
-  <PlayerBar playback={playerBarState} onTogglePlayback={handleTogglePlay} onRetryPlayback={handleRetryPlayback} onPrevious={handlePrevious} onNext={handleNext} onSeek={handleSeek} onVolumeChange={handleVolumeChange} fullscreenOpen={isFullscreenOpen} onToggleFullscreen={() => (isFullscreenOpen = !isFullscreenOpen)}
+  <PlayerBar playback={playerBarState} onTogglePlayback={handleTogglePlay} onRetryPlayback={handleRetryPlayback} onPrevious={handlePrevious} onNext={handleNext} onSeek={handleSeek} onVolumeChange={handleVolumeChange} fullscreenOpen={isFullscreenOpen} onToggleFullscreen={() => setPlayerFullscreen(!isFullscreenOpen)}
+    {selectedPanel} onSelectPanel={(panel) => { void setPlayerFullscreen(true, panel); }}
+    onOpenArtist={(id) => { void setPlayerFullscreen(false); void openArtistDetail(id); }}
+    onOpenAlbum={(id) => { void setPlayerFullscreen(false); void openAlbumDetail(id); }} onOpenMenu={openNowPlayingMenu}
     loggedIn={authStatus.state === 'ready'} liked={accountData.likedIds.has(playbackState.currentTrack?.videoId ?? '')}
     likePending={(accountData.loading.likes && !accountData.likedIds.has(playbackState.currentTrack?.videoId ?? '')) || accountData.pendingIds.has(playbackState.currentTrack?.videoId ?? '')}
     likeError={accountData.actionError || accountData.errors.likes}
@@ -568,12 +781,30 @@
 </div>
   </div>
   {#if isFullscreenOpen}
-    <FullscreenNowPlaying playback={playerBarState} onSelectQueue={playQueueIndex} onClose={() => (isFullscreenOpen = false)} />
+    <FullscreenNowPlaying playback={playerBarState} onSelectQueue={playQueueIndex} onClose={() => setPlayerFullscreen(false)}
+      {selectedPanel} onSelectPanel={(panel) => selectedPanel = panel}
+      loggedIn={authStatus.state === 'ready'} liked={accountData.likedIds.has(playbackState.currentTrack?.videoId ?? '')}
+      likePending={accountData.pendingIds.has(playbackState.currentTrack?.videoId ?? '')}
+      onToggleLike={() => { if (playbackState.currentTrack) void account.toggleLike(playbackState.currentTrack); }}
+      onOpenArtist={(id) => { void setPlayerFullscreen(false); void openArtistDetail(id); }}
+      onOpenAlbum={(id) => { void setPlayerFullscreen(false); void openAlbumDetail(id); }} onOpenMenu={openNowPlayingMenu}
+      onQueueContextMenu={(event, entry) => menuService.open(event, {kind:'song',song:songFromQueue(entry),entryId:entry.entryId})}
+      onRetryRadio={() => { void player.retryRadio().catch(error => shellError = extractErrorMessage(error, 'No se pudo reintentar la radio.')); }} />
   {/if}
+  {#if menuRequest}{#key menuRequest}<ContextMenu x={menuRequest.x} y={menuRequest.y} items={menu} onAction={executeMenu} onClose={() => closeMenu()} />{/key}{/if}
+  {#if editingPlaylist}<PlaylistEditorDialog playlist={editingPlaylist} onSave={savePlaylistDetails} onClose={() => editingPlaylist = null} />{/if}
+  {#if deletingPlaylist}<PlaylistDeleteDialog playlist={deletingPlaylist} onDelete={deleteSelectedPlaylist} onClose={() => deletingPlaylist = null} />{/if}
+  {#if newPlaylistSong}<PlaylistEditorDialog playlist={{id:'',title:'',subtitle:null,thumbnail:null,description:'',items:[],continuation:null,owned:true,inLibrary:true,privacy:'PRIVATE',collaborative:false,sort:'default',sortEditable:false}}
+    onSave={createPlaylistFromSong} onClose={() => { newPlaylistSong = null; createdPlaylistForSong = null; }} />{/if}
+  {#if menuNotice}<div class="menu-notice" role="status">{menuNotice}<button type="button" aria-label="Cerrar aviso" onclick={() => menuNotice = null}>×</button></div>{/if}
 </div>
 
 <style>
   .account-action-error { margin: 10px 32px; padding: 10px 14px; border-radius: 8px; background: #9d303033; color: #ffd5d5; font-size: 13px; }
+  .shell-error { position: fixed; z-index: 600; top: 48px; right: 16px; display: flex; gap: 12px; max-width: min(420px, calc(100vw - 64px)); margin: 0; background: #552a30; box-shadow: 0 8px 24px #0006; }
+  .shell-error button { border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+  .menu-notice { position: fixed; z-index: 600; bottom: 104px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border: 1px solid #ffffff24; border-radius: 10px; color: white; background: #303038; font: inherit; }
+  .menu-notice button { margin-left: 12px; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
   :global(html), :global(body) {
     width: 100%;
     height: 100%;
@@ -591,6 +822,7 @@
   }
 
   .app-frame {
+    --titlebar-height: 40px;
     --sidebar-width: 230px;
     --sideb-sidebar: #24242a;
     --sideb-accent: #a33d45;
@@ -599,6 +831,8 @@
     width: 100%;
     height: 100dvh;
     min-height: 0;
+    box-sizing: border-box;
+    padding-top: var(--titlebar-height);
     background: #1b1b1e;
   }
 
@@ -615,33 +849,6 @@
     overflow-anchor: none;
   }
 
-  .shell-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 30;
-    height: 42px;
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    background: rgb(27 27 30 / 92%);
-    border-bottom: 1px solid rgb(255 255 255 / 6%);
-  }
-
-  .sidebar-toggle {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border: 0;
-    border-radius: 6px;
-    color: #dedee2;
-    background: transparent;
-    font-size: 17px;
-    cursor: pointer;
-  }
-
-  .sidebar-toggle:hover { background: rgb(255 255 255 / 9%); }
-  .sidebar-toggle:focus-visible { outline: 2px solid #d06c70; outline-offset: 2px; }
 
   .shell {
     max-width: 900px;

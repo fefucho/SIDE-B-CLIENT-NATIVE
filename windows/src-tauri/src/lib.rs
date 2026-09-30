@@ -1,18 +1,21 @@
-use std::sync::{Arc, Mutex, RwLock};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
 use tauri::{Emitter, Manager};
 
-mod queue;
 mod dto;
-mod commands { pub(crate) mod catalog; pub(crate) mod account; pub(crate) mod playback; }
+mod queue;
+mod commands {
+    pub(crate) mod account;
+    pub(crate) mod catalog;
+    pub(crate) mod playback;
+}
 pub use dto::*;
-use queue::QueueStateDto;
+use queue::{next_owner_epoch, QueueStateDto};
 
-#[cfg(target_os = "windows")]
-mod session_store;
 #[cfg(target_os = "windows")]
 mod session;
-
+#[cfg(target_os = "windows")]
+mod session_store;
 
 pub struct PlaybackManager {
     pub is_playing: bool,
@@ -26,6 +29,12 @@ pub struct PlaybackManager {
     pub generation: u64,
     pub loaded_generation: Option<u64>,
     pub queue: QueueStateDto,
+    pub(crate) queue_epoch: u64,
+    pub(crate) observed_auth_generation: u64,
+    pub(crate) radio_playlist_id: Option<String>,
+    pub(crate) radio_cursor_video_id: Option<String>,
+    pub(crate) radio_exhausted: bool,
+    pub(crate) eof_waiting: Option<(u64, u64)>,
 }
 
 impl PlaybackManager {
@@ -42,6 +51,12 @@ impl PlaybackManager {
             generation: 0,
             loaded_generation: None,
             queue: QueueStateDto::default(),
+            queue_epoch: 0,
+            observed_auth_generation: 0,
+            radio_playlist_id: None,
+            radio_cursor_video_id: None,
+            radio_exhausted: false,
+            eof_waiting: None,
         }
     }
 
@@ -78,16 +93,54 @@ fn set_auth_status(app: &tauri::AppHandle, status: AuthStatusDto) {
         *lock = status.clone();
     }
     let _ = app.emit("auth-status-changed", status);
+    let generation = state.auth_generation.load(Ordering::SeqCst);
+    let playback_snapshot = if let Ok(mut playback) = state.playback.lock() {
+        if playback.observed_auth_generation != generation {
+            playback.observed_auth_generation = generation;
+            invalidate_queue_owner(&mut playback);
+            playback.radio_playlist_id = None;
+            playback.radio_cursor_video_id = None;
+            playback.radio_exhausted = false;
+            playback.eof_waiting = None;
+            if playback.queue.radio.is_some() {
+                playback.queue.end_radio(None, true);
+                Some(playback.to_dto())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(dto) = playback_snapshot {
+        let _ = app.emit("playback-state-changed", &dto);
+    }
+}
+
+pub(crate) fn invalidate_queue_owner(playback: &mut PlaybackManager) {
+    playback.queue_epoch = next_owner_epoch(playback.queue_epoch);
+    playback.radio_playlist_id = None;
+    playback.radio_cursor_video_id = None;
+    playback.radio_exhausted = false;
+    playback.eof_waiting = None;
 }
 
 fn auth_generation(app: &tauri::AppHandle) -> u64 {
-    app.state::<AppState>().auth_generation.load(Ordering::SeqCst)
+    app.state::<AppState>()
+        .auth_generation
+        .load(Ordering::SeqCst)
 }
 
 #[tauri::command]
 fn get_auth_status(state: tauri::State<'_, AppState>) -> Result<AuthStatusDto, CommandError> {
-    state.auth.read().map(|status| status.clone())
-        .map_err(|_| CommandError::new("AUTH_STATE_ERROR", "No se pudo leer el estado de la sesión."))
+    state.auth.read().map(|status| status.clone()).map_err(|_| {
+        CommandError::new(
+            "AUTH_STATE_ERROR",
+            "No se pudo leer el estado de la sesión.",
+        )
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -95,13 +148,15 @@ fn get_auth_status(state: tauri::State<'_, AppState>) -> Result<AuthStatusDto, C
 // Keep this command async: WebViewWindowBuilder can deadlock Windows when invoked from a
 // synchronous Tauri command (the blank, unclosable login window seen in W12).
 async fn login_webview(app: tauri::AppHandle) -> Result<(), CommandError> {
-    session::open_login(app)
-        .map_err(|message| CommandError::new("LOGIN_WINDOW_ERROR", message))
+    session::open_login(app).map_err(|message| CommandError::new("LOGIN_WINDOW_ERROR", message))
 }
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-async fn cancel_login(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<AuthStatusDto, CommandError> {
+async fn cancel_login(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<AuthStatusDto, CommandError> {
     state.auth_generation.fetch_add(1, Ordering::SeqCst);
     set_auth_status(&app, AuthStatusDto::guest());
     session::close_login_window(&app)
@@ -111,15 +166,24 @@ async fn cancel_login(app: tauri::AppHandle, state: tauri::State<'_, AppState>) 
 
 #[cfg(target_os = "windows")]
 #[tauri::command]
-async fn sign_out(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> Result<AuthStatusDto, CommandError> {
+async fn sign_out(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<AuthStatusDto, CommandError> {
     state.auth_generation.fetch_add(1, Ordering::SeqCst);
     let _auth_operation = state.auth_operation.lock().await;
-    let dir = app.path().app_data_dir()
-        .map_err(|_| CommandError::new("STORAGE_ERROR", "No se pudo resolver el almacén de sesión."))?;
-    session_store::delete(&dir)
-        .map_err(|message| CommandError::new("STORAGE_ERROR", message))?;
-    let core = state.core.read().map_err(|_| CommandError::new("AUTH_STATE_ERROR", "No se pudo cerrar la sesión."))?.clone();
-    if let Some(core) = core { core.set_cookie_memory(None); }
+    let dir = app.path().app_data_dir().map_err(|_| {
+        CommandError::new("STORAGE_ERROR", "No se pudo resolver el almacén de sesión.")
+    })?;
+    session_store::delete(&dir).map_err(|message| CommandError::new("STORAGE_ERROR", message))?;
+    let core = state
+        .core
+        .read()
+        .map_err(|_| CommandError::new("AUTH_STATE_ERROR", "No se pudo cerrar la sesión."))?
+        .clone();
+    if let Some(core) = core {
+        core.set_cookie_memory(None);
+    }
     if let Ok(Some(player)) = state.player.read().map(|lock| lock.clone()) {
         let _ = player.stop();
         let _ = player.clear_playlist();
@@ -134,21 +198,24 @@ async fn sign_out(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> R
         playback.duration = 0.0;
         playback.current_track = None;
         playback.error = None;
+        invalidate_queue_owner(&mut playback);
         playback.queue = QueueStateDto::default();
         let _ = app.emit("playback-state-changed", playback.to_dto());
     }
     set_auth_status(&app, AuthStatusDto::guest());
-    session::clear_login_cookies(&app).await
+    session::clear_login_cookies(&app)
+        .await
         .map_err(|message| CommandError::new("PROFILE_CLEANUP_ERROR", message))?;
     Ok(AuthStatusDto::guest())
 }
 
 #[tauri::command]
-fn get_backend_status(
-    state: tauri::State<'_, AppState>,
-) -> Result<BackendStatusDto, CommandError> {
+fn get_backend_status(state: tauri::State<'_, AppState>) -> Result<BackendStatusDto, CommandError> {
     let core_opt = state.core.read().map_err(|_| {
-        CommandError::new("LOCK_ERROR", "Error de concurrencia al leer el estado del core.")
+        CommandError::new(
+            "LOCK_ERROR",
+            "Error de concurrencia al leer el estado del core.",
+        )
     })?;
 
     if core_opt.is_some() {
@@ -158,7 +225,10 @@ fn get_backend_status(
         })
     } else {
         let err_guard = state.init_error.read().map_err(|_| {
-            CommandError::new("LOCK_ERROR", "Error de concurrencia al leer el estado del core.")
+            CommandError::new(
+                "LOCK_ERROR",
+                "Error de concurrencia al leer el estado del core.",
+            )
         })?;
         let msg = err_guard
             .as_deref()
@@ -258,7 +328,8 @@ pub fn run() {
                         }
                         Err(_) => {
                             *state.init_error.write().unwrap() = Some(
-                                "Error al inicializar el almacenamiento local de Side B.".to_string(),
+                                "Error al inicializar el almacenamiento local de Side B."
+                                    .to_string(),
                             );
                         }
                     }
@@ -275,9 +346,9 @@ pub fn run() {
                 Ok(cache_dir) => {
                     let audio_cache = cache_dir.join("audio_cache");
                     if let Err(e) = std::fs::create_dir_all(&audio_cache) {
-                        *state.player_error.write().unwrap() = Some(
-                            format!("Error al crear el directorio de caché de audio: {e}"),
-                        );
+                        *state.player_error.write().unwrap() = Some(format!(
+                            "Error al crear el directorio de caché de audio: {e}"
+                        ));
                     } else {
                         let cache_str = audio_cache.to_string_lossy().to_string();
                         match player::Player::new(&cache_str) {
@@ -287,16 +358,16 @@ pub fn run() {
                             }
                             Err(_) => {
                                 *state.player_error.write().unwrap() = Some(
-                                    "No se pudo inicializar el motor de audio (libmpv).".to_string(),
+                                    "No se pudo inicializar el motor de audio (libmpv)."
+                                        .to_string(),
                                 );
                             }
                         }
                     }
                 }
                 Err(_) => {
-                    *state.player_error.write().unwrap() = Some(
-                        "No se pudo resolver el directorio de caché de audio.".to_string(),
-                    );
+                    *state.player_error.write().unwrap() =
+                        Some("No se pudo resolver el directorio de caché de audio.".to_string());
                 }
             }
 
@@ -369,34 +440,7 @@ pub fn run() {
                                 }
                             }
                             player::PlayerEvent::TrackEnded => {
-                                if let Ok(mut pb) = pb_ref.lock() {
-                                    // Evitar que un fin de pista de la pista anterior A afecte a B mientras B carga
-                                    if pb.loaded_generation.is_some() {
-                                        let next = pb.queue.current_index
-                                            .and_then(|index| index.checked_add(1))
-                                            .and_then(|index| pb.queue.items.get(index).cloned().map(|entry| (index, entry)));
-                                        pb.is_playing = false;
-                                        pb.is_loading = false;
-                                        pb.is_ended = true;
-                                        pb.position = pb.duration;
-                                        pb.loaded_generation = None;
-                                        let dto = pb.to_dto();
-                                        let generation = pb.generation;
-                                        drop(pb);
-                                        let _ = app_handle.emit("playback-state-changed", &dto);
-                                        if let Some((index, entry)) = next {
-                                            let app_for_next = app_handle.clone();
-                                            tauri::async_runtime::spawn(async move {
-                                                let state = app_for_next.state::<AppState>();
-                                                let _ = commands::playback::play_song(
-                                                    app_for_next.clone(), state, entry.video_id,
-                                                    Some(entry.title), Some(entry.artists), entry.thumbnail,
-                                                    None, Some(index), None, Some(true), Some(generation),
-                                                ).await;
-                                            });
-                                        }
-                                    }
-                                }
+                                commands::playback::handle_track_ended(app_handle.clone());
                             }
                             player::PlayerEvent::TrackFailed(_) => {
                                 if let Ok(mut pb) = pb_ref.lock() {
@@ -405,7 +449,8 @@ pub fn run() {
                                         pb.is_loading = false;
                                         pb.is_ended = false;
                                         pb.error = Some(
-                                            "Error al reproducir la pista en el motor de audio.".to_string(),
+                                            "Error al reproducir la pista en el motor de audio."
+                                                .to_string(),
                                         );
                                         pb.loaded_generation = None;
                                         let dto = pb.to_dto();
@@ -419,7 +464,8 @@ pub fn run() {
                                     if pb.loaded_generation.is_some() {
                                         pb.is_playing = false;
                                         pb.is_loading = false;
-                                        pb.error = Some("Error en el reproductor de audio.".to_string());
+                                        pb.error =
+                                            Some("Error en el reproductor de audio.".to_string());
                                         pb.loaded_generation = None;
                                         let dto = pb.to_dto();
                                         drop(pb);
@@ -444,7 +490,11 @@ pub fn run() {
             if window.label() == "sideb-login" && matches!(event, tauri::WindowEvent::Destroyed) {
                 let app = window.app_handle();
                 let state = app.state::<AppState>();
-                let authorizing = state.auth.read().map(|status| status.state == "authorizing").unwrap_or(false);
+                let authorizing = state
+                    .auth
+                    .read()
+                    .map(|status| status.state == "authorizing")
+                    .unwrap_or(false);
                 if authorizing {
                     state.auth_generation.fetch_add(1, Ordering::SeqCst);
                     set_auth_status(app, AuthStatusDto::guest());
@@ -475,10 +525,20 @@ pub fn run() {
             commands::account::rate_song,
             commands::account::apply_song_library_action,
             commands::account::create_playlist,
+            commands::account::edit_playlist_details,
+            commands::account::set_playlist_sort,
+            commands::account::delete_playlist,
+            commands::account::add_to_playlist,
+            commands::account::remove_from_playlist,
+            commands::account::move_playlist_track,
             commands::catalog::get_artist_radio,
             commands::account::toggle_album_library,
             commands::account::set_artist_subscription,
             commands::playback::play_song,
+            commands::playback::start_song_radio,
+            commands::playback::retry_radio,
+            commands::playback::enqueue_tracks,
+            commands::playback::remove_queue_entry,
             commands::playback::next_track,
             commands::playback::previous_track,
             commands::playback::pause_playback,
