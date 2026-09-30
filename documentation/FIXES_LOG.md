@@ -2684,3 +2684,22 @@
 - **Archivos Modificados**: `apple/Sources/SideB/Services/Storage/CookieStorage.swift`, `Scripts/compile_and_run.sh`, `Scripts/package_release.sh`, `install.sh`, `README.md`, `documentation/FIXES_LOG.md`.
 - **Verificación**: `swift build` en `apple/` compiló exitosamente (código 0); `compile_and_run.sh` y `package_release.sh` verificados; `install.sh` probado sintácticamente.
 
+### [FIX-083] - Reproducción del ID original de «Feel No Ways»
+
+- **Fecha**: 2026-09-28 (GMT-3)
+- **Agente / Rol**: Core Rust, UniFFI y macOS
+- **Componente**: Descifrado de streams web
+- **Problema / Causa Raíz**: El ID del álbum `pMaogWC5TEQ` entregaba únicamente formatos `signatureCipher` en `WEB_REMIX`. `CipherDeobfuscator::deobfuscate_stream_url` devolvía siempre `None`; los clientes de respaldo respondían que el video solo estaba disponible para Music Premium. El Core terminaba en `AllClientsFailed` pese a disponer de formatos web en la sesión iniciada.
+- **Solución Aplicada**: Se conectó el Core mediante un callback UniFFI a un contexto JavaScriptCore serial de macOS. Rust obtiene `player.js`, busca o actualiza la configuración validada del hash, inyecta las funciones de firma y `n`, y evalúa ambas en el runtime nativo para construir el URL del mismo `videoId`. Los clientes directos siguen como respaldo cuando falla la ruta web.
+- **Archivos Modificados**: `core/crates/sideb-core/src/cipher/mod.rs`, `core/crates/sideb-core/src/lib.rs`, bindings UniFFI, `apple/Sources/SideB/Services/Player/NativeCipherJsRuntime.swift`, `apple/Sources/SideB/SideBApp.swift`, `apple/Tests/SideBTests/CipherLiveSmokeTests.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `cargo test -p sideb-core --lib`: 80 aprobadas, 7 ignoradas. Prueba en vivo optativa con la sesión local: `pMaogWC5TEQ` se resolvió por `WEB_REMIX` y AVPlayer avanzó más de 0,5 s sin error (prueba aprobada en 3,7 s). `Scripts/compile_and_run.sh` compiló la app Release con SDK 27.0 y la abrió.
+
+### [FIX-084] - Espacio controla la reproducción fuera de campos de texto
+
+- **Fecha**: 2026-09-30 (GMT-3)
+- **Agente / Rol**: macOS / SwiftUI y AppKit
+- **Componente**: Atajo global de reproducción en Side B
+- **Problema / Causa Raíz**: La barra espaciadora no controlaba de forma consistente la reproducción al navegar por distintas pantallas de la app.
+- **Solución Aplicada**: Se instaló un monitor local de teclado que pausa o reanuda la pista actual con Espacio sin modificadores. Si el foco está en un campo de texto editable o en la página web de inicio de sesión, conserva la entrada de teclado. También ignora repeticiones de la tecla mantenida para evitar alternancias sucesivas.
+- **Archivos Modificados**: `apple/Sources/SideB/Services/Player/PlaybackSpaceShortcut.swift`, `apple/Sources/SideB/SideBApp.swift`, `apple/Tests/SideBTests/PlaybackSpaceShortcutTests.swift`, `documentation/FIXES_LOG.md`.
+- **Verificación**: `swift test -c release --filter spaceShortcut`: 2 pruebas aprobadas. `Scripts/compile_and_run.sh` compiló la app Release y la abrió. El usuario confirmó el funcionamiento del atajo en la app.

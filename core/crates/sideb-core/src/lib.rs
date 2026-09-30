@@ -24,6 +24,13 @@ pub use genius::{
 };
 use innertube::{AudioQuality, Clients, InnerTube, PlaylistSort, METADATA_CLIENT};
 
+/// Runs YouTube's player.js in the native JavaScriptCore process on macOS.
+#[uniffi::export(callback_interface)]
+pub trait CipherJsRuntime: Send + Sync {
+    fn load(&self, script: String) -> bool;
+    fn evaluate(&self, expression: String) -> Option<String>;
+}
+
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum SideBError {
     #[error("Network error: {message}")]
@@ -403,6 +410,10 @@ impl SideBCore {
             cipher,
             current_playback: Arc::new(Mutex::new(None)),
         }))
+    }
+
+    pub fn set_cipher_js_runtime(&self, runtime: Box<dyn CipherJsRuntime>) {
+        self.cipher.set_runtime(Arc::from(runtime));
     }
 
     /// Set session cookie extracted from Swift WKWebView or login flow.

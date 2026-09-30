@@ -5,6 +5,7 @@ import SideBCore
 struct SideBApp: App {
     @State private var rustCore: SideBCore?
     @State private var playerViewModel = PlayerViewModel()
+    @State private var playbackSpaceShortcut = PlaybackSpaceShortcut()
     @State private var cookieStorage = CookieStorage()
     @State private var initError: String?
     @State private var showLoginSheet = false
@@ -19,6 +20,7 @@ struct SideBApp: App {
             let appSupport = HomeLabConfiguration.appSupportURL
             try? FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
             let core = try SideBCore(dataDir: appSupport.path)
+            core.setCipherJsRuntime(runtime: NativeCipherJsRuntime())
             _rustCore = State(initialValue: core)
             _playerViewModel = State(initialValue: PlayerViewModel(rustCore: core))
         } catch {
@@ -57,6 +59,7 @@ struct SideBApp: App {
                     guard !hasBootstrappedSession else { return }
                     hasBootstrappedSession = true
                     playerViewModel.rustCore = core
+                    playbackSpaceShortcut.install(player: playerViewModel)
                     libraryViewModel.rustCore = core
                     let hasSession = accountViewModel.restoreSession(core: core, storage: cookieStorage)
                     homeViewModel.prepareSession(identity: cookieStorage.homeCacheIdentity(), purgePrevious: false)
