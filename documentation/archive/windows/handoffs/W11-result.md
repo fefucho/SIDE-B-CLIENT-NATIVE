@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W11 — fullscreen básico de reproducción en Windows
 
 Fecha: 2026-09-29. El usuario adelantó este paquete antes de integrar W10 y pidió una Cola visual aun sin gestión de cola.

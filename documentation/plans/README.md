@@ -4,6 +4,8 @@
 
 ---
 
+Windows usa ahora [su backlog vigente](../../windows/BACKLOG.md); los planes del port se conservan en [el archivo histórico](../archive/windows/README.md). Este índice mantiene los planes macOS y roadmaps existentes.
+
 ## 📑 Epics de Desarrollo
 
 | Plan ID | Documento | Alcance y Módulos Clave | Estado |
@@ -20,9 +22,6 @@
 | **PLAN-010** | [`PLAN-010: Proporciones y alineación de tarjetas en Inicio`](PLAN-010-pulido-tarjetas-inicio.md) | Reducir escala de las tarjetas grandes y alinear título, tipo, distintivo y artista según la altura real del texto. | 🧪 **Validación manual** |
 | **PLAN-011** | [`PLAN-011: Navegación con trackpad y botones laterales del mouse`](PLAN-011-gestos-navegacion.md) | Gestos Atrás/Adelante sin animación, respetando el scroll horizontal y el router por ventana. | 🧪 **Validación manual** |
 | **PLAN-012** | [`PLAN-012: Información de Genius en Side B v2`](PLAN-012-genius-v2.md) | Resolución conservadora, contenido tipado, caché SQLite, carga tras iniciar audio y corrección manual. | 🧪 **Validación de proveedor y rendimiento** |
-| **PLAN-013** | [`PLAN-013: Side B para Windows con Tauri y Svelte`](PLAN-013-side-b-windows-tauri.md) | Port Windows sobre el core Rust del proyecto, con gates de compatibilidad, audio, UI, cuenta y release. [Flujo Codex ↔ Antigravity](../../.agents/WORKFLOW_WINDOWS.md). | 📋 **Propuesto** |
-| **PLAN-015** | [`PLAN-015: Reproducción cotidiana y cola en Windows`](PLAN-015-windows-reproduccion-cola.md) | Entregas W13–W17: cola real, transporte, carátulas, edición, shuffle/repeat, radio y restauración. | 📋 **Propuesto** |
-| **PLAN-016** | [`PLAN-016: UI Windows como en macOS`](PLAN-016-windows-ui-paridad-macos.md) | Inicio W10a–W10d, playlist W18, álbum W19, artista/catálogos W20 y cuenta W21; medidas, contratos y revisión por pantalla. | 🚧 **Inicio/álbum/artista: recorrido básico aprobado; paridad visual pendiente** |
 
 ---
 

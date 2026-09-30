@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W21 — Cuenta y Biblioteca Windows
 
 Fecha: 2026-09-30. Estado: integrado; paridad completa todavía parcial. Plan: [PLAN-017](../plans/PLAN-017-windows-cuenta-biblioteca.md).

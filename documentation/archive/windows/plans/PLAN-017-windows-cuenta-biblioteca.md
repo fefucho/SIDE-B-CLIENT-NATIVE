@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # PLAN-017 — Cuenta y Biblioteca Windows con referencia macOS
 
 Fecha: 2026-09-30. Estado: base integrada y verificada en Windows; paridad completa parcial. Ver [W21-result](../handoffs/W21-result.md).

@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W07 — Transición entre Canciones, Control de Eventos y Manejo de Errores en Windows
 
 **Fecha:** 2026-09-29.  
@@ -8,13 +10,13 @@
 ## 1. Alcance implementado y diseño técnico
 
 ### Detención inmediata de pista previa en el motor (`Player::stop`)
-- En [`core/crates/player/src/lib.rs`](../../core/crates/player/src/lib.rs):
+- En [`core/crates/player/src/lib.rs`](../../../../core/crates/player/src/lib.rs):
   - Se agregó la función pública `pub fn stop(&self) -> Result<(), Error>`, que despacha el comando `"stop"` directamente a libmpv mediante `mpv_command`.
   - Esto detiene la reproducción y descarga el archivo o flujo de red activo de manera síncrona en el motor, evitando que la pista A continúe emitiendo sonido mientras se resuelve la pista B.
   - Se verificaron los 4 tests unitarios existentes en `core/crates/player` (`cargo test -p player`), aprobando en 0.01s sin alterar contratos ni romper compatibilidad.
 
 ### Aislamiento generacional y ciclo de vida A → B en Rust (`windows/src-tauri`)
-- En [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs):
+- En [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs):
   - **Identificadores generacionales:**
     - `generation: u64`: contador incremental que identifica de manera única cada solicitud de reproducción en el ciclo de vida de la aplicación.
     - `loaded_generation: Option<u64>`: registra la generación de la pista que actualmente está cargada y activa en el motor libmpv. Es `None` cuando el reproductor está inactivo o mientras se resuelve una nueva pista.
@@ -35,9 +37,9 @@
     - Se incluye el campo `generation` en `PlaybackProgressDto` y `PlaybackStateDto`.
 
 ### Reactividad, reintento y descarte en Svelte 5 (`windows/src`)
-- En [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts):
+- En [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts):
   - Añadido el campo `generation: number` tanto a `PlaybackStateDto` como a `PlaybackProgressDto`.
-- En [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte):
+- En [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte):
   - **Filtro monotónico de eventos de progreso:** El listener de `playback-progress` comprueba `event.payload.generation >= playbackState.generation` antes de sincronizar el reloj. Si llega un evento retrasado de una pista previa, se ignora.
   - **ID de petición local (`playSongRequestId`):** Al invocar `play_song`, se descarta cualquier resolución previa de la promesa IPC si el usuario continuó haciendo clic.
   - **UI de error y reintento en el reproductor:**
@@ -71,11 +73,11 @@
 
 ## 4. Evidencia visual
 
-- **Captura W07 - Transición A → B verificada:** [`windows/playback_transition_a_to_b.png`](../../windows/playback_transition_a_to_b.png):
+- **Captura W07 - Transición A → B verificada:** [`windows/playback_transition_a_to_b.png`](../screenshots/playback_transition_a_to_b.png):
   - Muestra la transición exitosa de Canción A (*"Instant Crush"*) a Canción B (*"Veridis Quo"*), con etiqueta `► SONANDO`, carátula actualizada en la barra inferior, avance del reloj en `0:04 / 5:45` y controles de transporte reactivos.
-- **Captura W07 - Manejo de error y botón de reintento:** [`windows/playback_error_state.png`](../../windows/playback_error_state.png):
+- **Captura W07 - Manejo de error y botón de reintento:** [`windows/playback_error_state.png`](../screenshots/playback_error_state.png):
   - Muestra la barra de reproducción ante un fallo de resolución de stream: reproducción detenida, tiempo en `0:00 / 0:00`, badge de error `Error de reproducción: STREAM_RESOLUTION_FAILED`, botón interactivo `↻ Reintentar` (`.retry-btn`) y botón de transporte central adaptado con el icono de reintento.
-- **Captura W07 - Estado verificado completo:** [`windows/playback_w07_verified.png`](../../windows/playback_w07_verified.png) y [`windows/playback.png`](../../windows/playback.png):
+- **Captura W07 - Estado verificado completo:** [`windows/playback_w07_verified.png`](../screenshots/playback_w07_verified.png) y [`windows/playback.png`](../screenshots/playback.png):
   - Muestra la recuperación fluida de error y reproducción final de pista de álbum con estado de fin y reinicio comprobados.
 
 ---
@@ -92,20 +94,20 @@
 
 ## 6. Archivos modificados o agregados en W07
 
-- [`core/crates/player/src/lib.rs`](../../core/crates/player/src/lib.rs): Implementada la función pública `Player::stop()` usando `mpv_command("stop")`.
-- [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs):
+- [`core/crates/player/src/lib.rs`](../../../../core/crates/player/src/lib.rs): Implementada la función pública `Player::stop()` usando `mpv_command("stop")`.
+- [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs):
   - Incorporados `generation: u64` y `loaded_generation: Option<u64>` en `PlaybackManager` y DTOs.
   - Parada física y descarte síncrono previo en `play_song`.
   - Guardias estrictas en `pause_playback`, `resume_playback` y `seek_playback`.
   - Nuevo comando IPC `stop_playback`.
   - Filtrado generacional de eventos de fondo en `take_events()` asegurando que eventos viejos no muten el estado de pistas nuevas.
-- [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): Actualizados `PlaybackStateDto` y `PlaybackProgressDto` con `generation: number`.
-- [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte):
+- [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): Actualizados `PlaybackStateDto` y `PlaybackProgressDto` con `generation: number`.
+- [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte):
   - Control de peticiones obsoletas en frontend con `playSongRequestId`.
   - Filtrado monotónico de eventos de progreso de reproducción.
   - Badge de error estilizado y botón `.retry-btn` interactivo para reintento inmediato.
   - Adaptación de `.play-toggle-btn` en estado de error.
   - Reseteo inmediato de errores al cambiar de pista.
-- [`windows/README.md`](../../windows/README.md): Actualizadas las capacidades a W07, documentando la semántica de transición A → B, las guardias generacionales y los límites vigentes.
-- [`windows/playback_transition_a_to_b.png`](../../windows/playback_transition_a_to_b.png), [`windows/playback_error_state.png`](../../windows/playback_error_state.png), [`windows/playback_w07_verified.png`](../../windows/playback_w07_verified.png), [`windows/playback.png`](../../windows/playback.png): Capturas de evidencia visual.
-- [`documentation/handoffs/W07-result.md`](../../documentation/handoffs/W07-result.md): Este documento de entrega.
+- [`windows/README.md`](../../../../windows/README.md): Actualizadas las capacidades a W07, documentando la semántica de transición A → B, las guardias generacionales y los límites vigentes.
+- [`windows/playback_transition_a_to_b.png`](../screenshots/playback_transition_a_to_b.png), [`windows/playback_error_state.png`](../screenshots/playback_error_state.png), [`windows/playback_w07_verified.png`](../screenshots/playback_w07_verified.png), [`windows/playback.png`](../screenshots/playback.png): Capturas de evidencia visual.
+- [`documentation/handoffs/W07-result.md`](W07-result.md): Este documento de entrega.

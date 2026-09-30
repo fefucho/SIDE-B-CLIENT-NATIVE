@@ -1,6 +1,8 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # Trabajo compartido Codex ↔ Antigravity para Side B Windows
 
-**Estado:** W01–W06 verificados en Windows el 2026-09-29; M1/M2 cubiertos y M3 parcial. W06 reprodujo pistas públicas mediante libmpv con controles y EOF comprobados por telemetría; falta comprobar audibilidad física. Los hitos completos siguen en [`PLAN-013`](../documentation/plans/PLAN-013-side-b-windows-tauri.md).
+**Estado:** W01–W06 verificados en Windows el 2026-09-29; M1/M2 cubiertos y M3 parcial. W06 reprodujo pistas públicas mediante libmpv con controles y EOF comprobados por telemetría; falta comprobar audibilidad física. Los hitos completos siguen en [`PLAN-013`](../plans/PLAN-013-side-b-windows-tauri.md).
 
 ## Roles y límites
 
@@ -50,7 +52,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 ## Paquete W02 — ventana Tauri con el core conectado (resto de M1)
 
-**Entrada:** W01 está comprobado en Windows; ver [`W01-result.md`](../documentation/handoffs/W01-result.md). Usar Visual Studio Build Tools 2022 en entorno de desarrollo x64 al compilar Rust, ya que la instalación VS 2026 elegida por un PowerShell normal no encontró `msvcrt.lib`. Node.js, pnpm y Rust están disponibles; comprobar versiones en la sesión antes de usarlos. Si una herramienta falta en el proceso de Antigravity, usar su ruta instalada y documentarlo.
+**Entrada:** W01 está comprobado en Windows; ver [`W01-result.md`](../handoffs/W01-result.md). Usar Visual Studio Build Tools 2022 en entorno de desarrollo x64 al compilar Rust, ya que la instalación VS 2026 elegida por un PowerShell normal no encontró `msvcrt.lib`. Node.js, pnpm y Rust están disponibles; comprobar versiones en la sesión antes de usarlos. Si una herramienta falta en el proceso de Antigravity, usar su ruta instalada y documentarlo.
 
 **Alcance de código:** crear `windows/` con el template oficial **Tauri 2 + Svelte + TypeScript + pnpm**. Usar nombre visible Side B, identificador `com.fefucho.sideb.windows` y archivos de datos separados de la app Mac. En `windows/src-tauri/Cargo.toml`, agregar `sideb-core = { path = "../../core/crates/sideb-core" }`; verificar que Cargo construye esa dependencia real. Mantener los comandos y permisos del scaffold al mínimo. No implementar búsqueda, login, audio, cola ni pantalla visual definitiva en W02.
 
@@ -64,7 +66,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Trabajá sólo **W02** de `.agents/WORKFLOW_WINDOWS.md`, siguiendo `documentation/plans/PLAN-013-side-b-windows-tauri.md` y `.agents/rules/40-windows.md`. Leé `documentation/handoffs/W01-result.md` antes de compilar: en esta PC hay que usar el entorno x64 de Build Tools 2022 para encontrar `msvcrt.lib`. Creá el scaffold oficial Tauri 2 + Svelte + TypeScript + pnpm en `windows/`, agregá la dependencia real por ruta a `sideb-core`, y entregá README y CI Windows. Compilá y abrí la ventana en esta PC; documentá los resultados exactos y cualquier bloqueo. No implementes búsqueda, login ni audio todavía. Guardá `documentation/handoffs/W02-result.md` y terminá tu respuesta con una línea propia `ENTREGA LISTA: W02` o `BLOQUEADO: W02`.
 
-**Cierre W02:** `pnpm build`, `cargo check`, `cargo build` y los tests del core aprobaron en Windows; el WebView2 mostró la pantalla de arranque y respondió a un comando IPC. Ver [informe](../documentation/handoffs/W02-result.md) y [captura](../windows/rendered_window.png). El CI remoto no se ha ejecutado porque este checkout no tiene `.git`. El `target` de Tauri es una unión local hacia `S:` para evitar llenar `C:`; no es parte del código distribuible.
+**Cierre W02:** `pnpm build`, `cargo check`, `cargo build` y los tests del core aprobaron en Windows; el WebView2 mostró la pantalla de arranque y respondió a un comando IPC. Ver [informe](../handoffs/W02-result.md) y [captura](../screenshots/rendered_window.png). El CI remoto no se ha ejecutado porque este checkout no tiene `.git`. El `target` de Tauri es una unión local hacia `S:` para evitar llenar `C:`; no es parte del código distribuible.
 
 ## Paquete W03 — primera búsqueda real desde el core (M2 parcial)
 
@@ -89,7 +91,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Implementá sólo **W03** de `.agents/WORKFLOW_WINDOWS.md` en este checkout, siguiendo `.agents/AGENTS.md`, `.agents/rules/40-windows.md` y `documentation/plans/PLAN-013-side-b-windows-tauri.md`. Leé `documentation/handoffs/W02-result.md` y las APIs reales de `SideBCore` antes de editar. Conectá una única instancia del core al directorio de datos propio de Tauri y una búsqueda pública real `search_songs` con DTO Rust/TypeScript tipado y UI de carga, vacío y error. No toques `core/` ni `apple/`, no agregues login/audio/Home/álbum todavía. Compilá con Build Tools 2022, probá la búsqueda en la ventana Windows y guardá resultados/evidencia en `documentation/handoffs/W03-result.md`. Si la red bloquea los datos reales, informalo como pendiente sin declarar M2 completo. Cerrá con `ENTREGA LISTA: W03` o `BLOQUEADO: W03`.
 
-**Cierre W03:** `pnpm install --frozen-lockfile`, `pnpm check` (0 errores), `pnpm build` y `cargo check` aprobaron; una búsqueda pública de `Daft Punk` produjo 20 canciones en la ventana. Ver [informe](../documentation/handoffs/W03-result.md) y [captura](../windows/search_results.png). Home, álbum y resolución siguen pendientes de M2.
+**Cierre W03:** `pnpm install --frozen-lockfile`, `pnpm check` (0 errores), `pnpm build` y `cargo check` aprobaron; una búsqueda pública de `Daft Punk` produjo 20 canciones en la ventana. Ver [informe](../handoffs/W03-result.md) y [captura](../screenshots/search_results.png). Home, álbum y resolución siguen pendientes de M2.
 
 ## Paquete W04 — búsqueda y detalle de álbumes (M2 parcial)
 
@@ -113,7 +115,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Implementá sólo **W04** de `.agents/WORKFLOW_WINDOWS.md` en este checkout, siguiendo `.agents/rules/40-windows.md` y `documentation/plans/PLAN-013-side-b-windows-tauri.md`. Leé `documentation/handoffs/W03-result.md` y los contratos vigentes `SideBCore::search_cards` y `SideBCore::get_album`. Agregá DTOs y comandos tipados para buscar álbumes y abrir un detalle real con pistas; conservá la búsqueda de canciones W03 y su manejo seguro de errores. No toques `core/` ni `apple/`, no añadas login, audio, Home o stream. Compilá, corré `pnpm check`, probá ambos modos en la ventana Windows y guardá evidencia sin datos privados en `documentation/handoffs/W04-result.md`. No declares M2 completo. Cerrá con `ENTREGA LISTA: W04` o `BLOQUEADO: W04`.
 
-**Cierre W04:** búsqueda pública de `Daft Punk` produjo 20 álbumes; se abrió *Random Access Memories* con 13 pistas reales y se volvió a la grilla. `pnpm check` y `cargo check` aprobaron. Ver [informe](../documentation/handoffs/W04-result.md), [grilla](../windows/album_search_results.png) y [detalle](../windows/album_detail.png).
+**Cierre W04:** búsqueda pública de `Daft Punk` produjo 20 álbumes; se abrió *Random Access Memories* con 13 pistas reales y se volvió a la grilla. `pnpm check` y `cargo check` aprobaron. Ver [informe](../handoffs/W04-result.md), [grilla](../screenshots/album_search_results.png) y [detalle](../screenshots/album_detail.png).
 
 ## Paquete W05 — Inicio con secciones y chips reales (M2 parcial)
 
@@ -137,7 +139,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Implementá sólo **W05** de `.agents/WORKFLOW_WINDOWS.md` siguiendo `.agents/rules/40-windows.md` y `documentation/plans/PLAN-013-side-b-windows-tauri.md`. Inspeccioná la API real `SideBCore::get_home_page` y leé `documentation/handoffs/W04-result.md` antes de editar. Agregá comando/DTOs tipados para Inicio con secciones y chips reales; mantené las búsquedas y detalle W03/W04. Los controles visibles deben funcionar: chips recargan el feed, y los ítems sin navegación implementada quedan informativos. No toques `core/` ni `apple/`, ni añadas audio, login, stream o paginación falsa. Corré `pnpm check`, build web/Rust y probá Inicio, chip y regreso a Buscar en la ventana Windows. Guardá evidencia sin datos privados en `documentation/handoffs/W05-result.md`; no declares M2 completo. Cerrá con `ENTREGA LISTA: W05` o `BLOQUEADO: W05`.
 
-**Cierre W05:** Inicio público cargó 11 chips y secciones reales; cambiar a *Energize* cambió el feed. La navegación rápida Inicio→Buscar→Inicio, búsquedas W03/W04, `pnpm check`, build web y Rust aprobaron. Ver [informe](../documentation/handoffs/W05-result.md) y [captura](../windows/home_feed.png). Falta resolución/reproducción de streams.
+**Cierre W05:** Inicio público cargó 11 chips y secciones reales; cambiar a *Energize* cambió el feed. La navegación rápida Inicio→Buscar→Inicio, búsquedas W03/W04, `pnpm check`, build web y Rust aprobaron. Ver [informe](../handoffs/W05-result.md) y [captura](../screenshots/home_feed.png). Falta resolución/reproducción de streams.
 
 ## Paquete W06 — primera canción y reproductor mínimo (M2/M3 parcial)
 
@@ -164,7 +166,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Implementá sólo **W06** de `.agents/WORKFLOW_WINDOWS.md` para Side B Windows, siguiendo `.agents/AGENTS.md`, `.agents/rules/00-project_rules.md`, `.agents/rules/10-backend.md`, `.agents/rules/40-windows.md` y `PLAN-013`. Usá el libmpv y `mpv.lib` locales ya preparados en `S:\sideb-deps\mpv-gb4b5d69a4-x64-gpl\` y el entorno x64 de Build Tools 2022. Conectá `SideBCore::resolve_stream` al `core/crates/player` existente y al shell Tauri; reproducí una canción real con play/pausa, seek, volumen y progreso/fin/error visibles. No envíes URLs firmadas ni headers a Svelte, eventos o logs. No toques Apple ni el core de InnerTube/sideb-core, y no agregues cola/login/rediseño. Probá una canción de Buscar y otra del detalle de álbum en la PC, registrá pruebas y límites en `documentation/handoffs/W06-result.md`. Si un bloqueo técnico impide audio, devolvé la evidencia y el cambio mínimo necesario, sin marcar reproducción completa. Cerrá con `ENTREGA LISTA: W06` o `BLOQUEADO: W06`.
 
-**Cierre W06:** `cargo test -p player` (4/4), `pnpm check` (0 errores), build web y `cargo check/build` aprobaron. En la ventana Windows, una pista de Buscar y otra de álbum avanzaron; pausa, reanudación, seek, volumen, EOF, guardia de reanudar en EOF y reinicio se comprobaron por eventos/estado de libmpv. Ver [informe](../documentation/handoffs/W06-result.md) y [capturas](../windows/playback_search_song.png). El usuario confirmó después que la canción se escucha en su equipo; no se midió el loopback del SO. M3 y el instalador siguen abiertos.
+**Cierre W06:** `cargo test -p player` (4/4), `pnpm check` (0 errores), build web y `cargo check/build` aprobaron. En la ventana Windows, una pista de Buscar y otra de álbum avanzaron; pausa, reanudación, seek, volumen, EOF, guardia de reanudar en EOF y reinicio se comprobaron por eventos/estado de libmpv. Ver [informe](../handoffs/W06-result.md) y [capturas](../screenshots/playback_search_song.png). El usuario confirmó después que la canción se escucha en su equipo; no se midió el loopback del SO. M3 y el instalador siguen abiertos.
 
 ## Paquete W07 — cambio de canción y recuperación de errores (M3 parcial)
 
@@ -189,7 +191,7 @@ Este bucle requiere que ambas apps y la PC permanezcan disponibles, permiso efec
 
 > Implementá sólo **W07** de `.agents/WORKFLOW_WINDOWS.md` en este checkout. Leé `.agents/AGENTS.md`, `.agents/rules/00-project_rules.md`, `.agents/rules/40-windows.md`, `PLAN-013` y `documentation/handoffs/W06-result.md`. Corregí la transición A→B, selecciones rápidas, eventos viejos, errores y reintento del reproductor Windows. La pista anterior debe detenerse al anunciar la nueva; sólo la última selección puede cargar y actualizar UI; ninguna falla puede dejar audio oculto. Conservá W06 y no implementes cola ni rediseño. Usá `SIDEB_MPV_DIR` y Build Tools x64 ya documentados. Verificá compilación y los escenarios reales en la ventana; guardá resultados y límites en `documentation/handoffs/W07-result.md`. Cerrá con `ENTREGA LISTA: W07` o `BLOQUEADO: W07`.
 
-**Cierre W07:** Antigravity entregó y documentó los 10 escenarios CDP en [W07-result.md](../documentation/handoffs/W07-result.md). Codex revisó el bloqueo del reproductor al detener/cargar y confirmó `cargo check` posterior. No se asignaron más tareas a Gemini para conservar cuota.
+**Cierre W07:** Antigravity entregó y documentó los 10 escenarios CDP en [W07-result.md](../handoffs/W07-result.md). Codex revisó el bloqueo del reproductor al detener/cargar y confirmó `cargo check` posterior. No se asignaron más tareas a Gemini para conservar cuota.
 
 ## Secuencia visual acordada — W08 a W11
 
@@ -203,7 +205,7 @@ Crear tokens CSS según `apple/Sources/SideB/UI/AppTheme.swift` (fondo `#1B1B1E`
 
 **Salida W08:** shell reconocible, orden visual completo y navegación básica real de Inicio/Buscar/álbum; sidebar abre/cierra con contenido y reproductor estables. `pnpm check/build` y prueba visual en ventana ancha/estrecha. Capturas públicas con sidebar abierta/cerrada e informe `documentation/handoffs/W08-result.md`.
 
-**Corte W08:** Sidebar e integración básica entregadas en [W08-result.md](../documentation/handoffs/W08-result.md). `pnpm check/build` y pruebas en ventana ancha pasaron. La extracción opcional de `AppShell`/`ContentHost` y la comprobación de ventana estrecha siguen abiertas.
+**Corte W08:** Sidebar e integración básica entregadas en [W08-result.md](../handoffs/W08-result.md). `pnpm check/build` y pruebas en ventana ancha pasaron. La extracción opcional de `AppShell`/`ContentHost` y la comprobación de ventana estrecha siguen abiertas.
 
 ### W09 — barra de reproducción básica
 
@@ -211,7 +213,7 @@ Usar `apple/Sources/SideB/Views/Components/PlayerBarView.swift` como referencia 
 
 **Salida W09:** barra básica funcional con una canción real, sidebar abierta/cerrada, ventana estrecha/ancha y teclado. `pnpm check/build`, prueba manual y capturas públicas en `documentation/handoffs/W09-result.md`.
 
-**Corte W09:** Barra conectada y probada con pista real, pausa, seek y volumen en [W09-result.md](../documentation/handoffs/W09-result.md). `pnpm check/build` pasaron sin avisos. Falta comprobar ventana estrecha visualmente; no se declaran W10/W11 integrados.
+**Corte W09:** Barra conectada y probada con pista real, pausa, seek y volumen en [W09-result.md](../handoffs/W09-result.md). `pnpm check/build` pasaron sin avisos. Falta comprobar ventana estrecha visualmente; no se declaran W10/W11 integrados.
 
 ### W10 — Inicio visual básico con contenido real
 
@@ -225,26 +227,26 @@ Crear `FullscreenNowPlaying` como una capa del shell que abre/cierra desde un co
 
 **Salida W11:** abrir/cerrar fullscreen con una pista real y conservar audio/posición; layout básico correcto con ventana ancha/estrecha. `pnpm check/build`, prueba en Windows, captura pública e informe `documentation/handoffs/W11-result.md`. Después, completar paneles y pantallas de Biblioteca, Historial, playlists, artista y demás destinos, uno por paquete.
 
-**Corte W11:** El usuario adelantó fullscreen antes de W10 y autorizó una Cola visual sin gestión real. Se integró la vista básica con pista actual, tres pestañas, botón de la barra y cierre con `Esc`; el progreso siguió al abrir/cerrar. Ver [W11-result.md](../documentation/handoffs/W11-result.md). W10 y el breakpoint menor de 780 px siguen pendientes.
+**Corte W11:** El usuario adelantó fullscreen antes de W10 y autorizó una Cola visual sin gestión real. Se integró la vista básica con pista actual, tres pestañas, botón de la barra y cierre con `Esc`; el progreso siguió al abrir/cerrar. Ver [W11-result.md](../handoffs/W11-result.md). W10 y el breakpoint menor de 780 px siguen pendientes.
 
 ## W12 — acceso y sesión Windows
 
-El usuario priorizó evaluar login antes de integrar W10. Seguir [PLAN-014](../documentation/plans/PLAN-014-windows-login.md). W12a es una decisión de viabilidad sin credenciales ni UI; W12b almacenamiento/contrato, W12c flujo visible y W12d primera pantalla de Biblioteca sólo comienzan si el paquete anterior pasa. El core actual guarda `session_cookie` en SQLite; no copiar el flujo WKWebView del Mac ni mostrar un login que no pueda cerrar el circuito. Codex coordina y revisa; el primer subpaquete se asigna a un subagente Codex GPT-6 Luna para reservar la cuota de Antigravity.
+El usuario priorizó evaluar login antes de integrar W10. Seguir [PLAN-014](../plans/PLAN-014-windows-login.md). W12a es una decisión de viabilidad sin credenciales ni UI; W12b almacenamiento/contrato, W12c flujo visible y W12d primera pantalla de Biblioteca sólo comienzan si el paquete anterior pasa. El core actual guarda `session_cookie` en SQLite; no copiar el flujo WKWebView del Mac ni mostrar un login que no pueda cerrar el circuito. Codex coordina y revisa; el primer subpaquete se asigna a un subagente Codex GPT-6 Luna para reservar la cuota de Antigravity.
 
-**Cierre W12a:** Luna entregó la [evaluación de autenticación](../documentation/handoffs/W12a-auth-feasibility.md). OAuth oficial de escritorio no entrega directamente la cookie que usa InnerTube. W12b/W12c esperan una decisión de producto entre sesión web no oficial tipo Mac, modo invitado por ahora o un rediseño con APIs oficiales. No se manejaron credenciales ni se usó Antigravity.
+**Cierre W12a:** Luna entregó la [evaluación de autenticación](../handoffs/W12a-auth-feasibility.md). OAuth oficial de escritorio no entrega directamente la cookie que usa InnerTube. W12b/W12c esperan una decisión de producto entre sesión web no oficial tipo Mac, modo invitado por ahora o un rediseño con APIs oficiales. No se manejaron credenciales ni se usó Antigravity.
 
-**Avance W12b/W12c:** El usuario eligió el flujo de sesión web tipo Mac después de revisar LiMusic. Codex y Luna implementaron el [prototipo de login Windows](../documentation/handoffs/W12-login-prototype.md): core sin cookie en SQLite, DPAPI, ventana WebView2, estado de perfil y logout. Tras corregir un deadlock de Tauri pasando `login_webview` a comando asincrónico, el usuario confirmó acceso y restauración luego de reiniciar. Compilación y tests dirigidos pasaron; falta probar logout/reinicio invitado. W12d Biblioteca sigue pendiente.
+**Avance W12b/W12c:** El usuario eligió el flujo de sesión web tipo Mac después de revisar LiMusic. Codex y Luna implementaron el [prototipo de login Windows](../handoffs/W12-login-prototype.md): core sin cookie en SQLite, DPAPI, ventana WebView2, estado de perfil y logout. Tras corregir un deadlock de Tauri pasando `login_webview` a comando asincrónico, el usuario confirmó acceso y restauración luego de reiniciar. Compilación y tests dirigidos pasaron; falta probar logout/reinicio invitado. W12d Biblioteca sigue pendiente.
 
 ## Siguiente serie propuesta — W13 a W17
 
-El [PLAN-015](../documentation/plans/PLAN-015-windows-reproduccion-cola.md) define paquetes pequeños de reproducción y cola: W13 navegación y sincronización visual, W14 edición manual, W15 shuffle/repeat, W16 radio/automix y W17 restauración/robustez. El avance de cada paquete se registra abajo. W12d Biblioteca continúa como pendiente independiente; coordinar cualquier cambio de cuenta con la cola antes de tocar el mismo estado.
+El [PLAN-015](../plans/PLAN-015-windows-reproduccion-cola.md) define paquetes pequeños de reproducción y cola: W13 navegación y sincronización visual, W14 edición manual, W15 shuffle/repeat, W16 radio/automix y W17 restauración/robustez. El avance de cada paquete se registra abajo. W12d Biblioteca continúa como pendiente independiente; coordinar cualquier cambio de cuenta con la cola antes de tocar el mismo estado.
 
-**Avance W13:** el usuario autorizó implementación con GPT-6 Luna. Cola de álbum/tema, ocurrencias, transporte Rust, EOF automático, fullscreen real y carátulas sincronizadas implementados; check/build web y Rust y 3 tests aprobaron. La prueba de audio y UI con una cola real sigue pendiente: el control de ventanas falló al retomar después del corte. Ver [W13-result](../documentation/handoffs/W13-result.md). W14–W17 siguen propuestos.
+**Avance W13:** el usuario autorizó implementación con GPT-6 Luna. Cola de álbum/tema, ocurrencias, transporte Rust, EOF automático, fullscreen real y carátulas sincronizadas implementados; check/build web y Rust y 3 tests aprobaron. La prueba de audio y UI con una cola real sigue pendiente: el control de ventanas falló al retomar después del corte. Ver [W13-result](../handoffs/W13-result.md). W14–W17 siguen propuestos.
 
 ## Prioridad visual — Inicio y catálogo (2026-09-30)
 
 El control de ventanas volvió a funcionar tras reiniciar Codex: se leyó la lista de ventanas y se activó/capturó Antigravity. Esto habilita la prueba manual pendiente, pero no la da por realizada.
 
-El usuario priorizó completar la UI de Inicio según macOS y después playlist, álbum y perfiles, pantalla por pantalla. Seguir [PLAN-016](../documentation/plans/PLAN-016-windows-ui-paridad-macos.md): **W10a geometría e integración → W10b metadata/acciones → W10c continuación/estados → W10d cierre visual → W18 playlist → W19 álbum → W20 artista/catálogos → W21 cuenta**. El Inicio actual sigue inline; `HomeView.svelte` todavía no está integrado. W14–W17 mantienen su alcance funcional y no se mezclan con el primer paquete visual. Primer encargo preparado: W10a; implementación pendiente.
+El usuario priorizó completar la UI de Inicio según macOS y después playlist, álbum y perfiles, pantalla por pantalla. Seguir [PLAN-016](../plans/PLAN-016-windows-ui-paridad-macos.md): **W10a geometría e integración → W10b metadata/acciones → W10c continuación/estados → W10d cierre visual → W18 playlist → W19 álbum → W20 artista/catálogos → W21 cuenta**. El Inicio actual sigue inline; `HomeView.svelte` todavía no está integrado. W14–W17 mantienen su alcance funcional y no se mezclan con el primer paquete visual. Primer encargo preparado: W10a; implementación pendiente.
 
-**Avance W10a:** el usuario autorizó reparto con Luna. Tres subagentes GPT-6 Luna implementaron HomeView, estantes/tarjetas y presentación/tokens; Codex integró `+page.svelte`, retiró el Inicio anterior y corrigió geometría/metadata. Check web sin errores/avisos, build y prueba de presentación aprobaron. Inicio real, sidebar contraída y apertura de álbum comprobados; ventana estrecha, teclado y comparación por captura Mac pendientes. Ver [W10a-result](../documentation/handoffs/W10a-result.md). El párrafo anterior describe el punto de partida; `HomeView` ya está integrado. W10b/W10c continúan pendientes.
+**Avance W10a:** el usuario autorizó reparto con Luna. Tres subagentes GPT-6 Luna implementaron HomeView, estantes/tarjetas y presentación/tokens; Codex integró `+page.svelte`, retiró el Inicio anterior y corrigió geometría/metadata. Check web sin errores/avisos, build y prueba de presentación aprobaron. Inicio real, sidebar contraída y apertura de álbum comprobados; ventana estrecha, teclado y comparación por captura Mac pendientes. Ver [W10a-result](../handoffs/W10a-result.md). El párrafo anterior describe el punto de partida; `HomeView` ya está integrado. W10b/W10c continúan pendientes.

@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W03 — Instancia única de SideBCore y Búsqueda Pública Real en Windows (M2)
 
 **Fecha:** 2026-09-29.  
@@ -8,7 +10,7 @@
 ## 1. Alcance implementado y revisiones aplicadas
 
 - **Instancia singleton de `SideBCore` no bloqueante y recuperable:**
-  - En [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs): el hook `.setup()` de Tauri inicializa `AppState` con `RwLock<Option<Arc<SideBCore>>>` e `init_error: RwLock<Option<String>>`. Si la inicialización del core o del almacenamiento falla, **la ventana no se cierra**; se registra el error y se expone un comando de recuperación (`retry_init_core`).
+  - En [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs): el hook `.setup()` de Tauri inicializa `AppState` con `RwLock<Option<Arc<SideBCore>>>` e `init_error: RwLock<Option<String>>`. Si la inicialización del core o del almacenamiento falla, **la ventana no se cierra**; se registra el error y se expone un comando de recuperación (`retry_init_core`).
   - Base de datos SQLite (`sideb.db`) y cachés aisladas en el directorio de datos propio de la app resuelto vía `app.path().app_data_dir()`.
 - **DTOs tipados y desinfección de datos privados:**
   - **DTO de canciones:** `SongDto` en Rust y TypeScript mapeando `videoId`, `title`, `artists`, `album`, `duration`, `thumbnail`, `isVideo`.
@@ -19,7 +21,7 @@
   - `get_backend_status() -> Result<BackendStatusDto, CommandError>`: informa si el motor está listo y su estado.
   - `retry_init_core() -> Result<BackendStatusDto, CommandError>`: permite reconectar o reintentar la inicialización del motor en caliente si falló al arrancar.
 - **Interfaz Svelte 5 y control de concurrencia:**
-  - En [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte):
+  - En [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte):
     - **ID de petición (Token de generación):** Cada búsqueda incrementa `currentRequestId`; las respuestas desordenadas o viejas se descartan silenciosamente para evitar condiciones de carrera.
     - **Protección de chips y formulario:** Tanto los chips de sugerencias como el input y botón de envío quedan deshabilitados (`disabled={isLoading}`) mientras se resuelve una consulta activa, impidiendo búsquedas concurrentes superpuestas.
     - **Barra de estado segura:** Indicador con punto verde y mensaje descriptivo (`Motor Side B conectado`) sin mostrar rutas de archivo ni nombres de usuario. Si falla, ofrece botón interactivo de reconexión.
@@ -60,7 +62,7 @@
 
 ## 4. Evidencia visual de la búsqueda real
 
-- **Captura guardada:** [`windows/search_results.png`](../../windows/search_results.png) (y respaldada en el directorio de artefactos de la sesión).
+- **Captura guardada:** [`windows/search_results.png`](../screenshots/search_results.png) (y respaldada en el directorio de artefactos de la sesión).
 - **Elementos visibles en la ventana:**
   - Header: Logo de Side B, badge `Side B • Windows W03`, título `Side B`, subtítulo `Búsqueda nativa consumiendo SideBCore::search_songs`.
   - Estado: Indicador verde activo con `Motor Side B conectado` (completamente libre de rutas de usuario o directorios del sistema).
@@ -71,12 +73,12 @@
 
 ## 5. Archivos modificados o agregados en W03
 
-- [`windows/vite.config.js`](../../windows/vite.config.js): Remoción de la directiva `@ts-expect-error` obsoleta para `node:process`.
-- [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs): Inicialización tolerante a fallos de `SideBCore`, DTO `SongDto`, `BackendStatusDto` higienizado, `CommandError` estructurado y comandos `search_songs`, `get_backend_status`, `retry_init_core`.
-- [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): Interfaces TypeScript `SongDto`, `BackendStatusDto` y `CommandError`.
-- [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte): UI de búsqueda completa con control de concurrencia por ID de petición, sugerencias deshabilitadas durante la carga, estados de carga, vacío, error y resultados.
-- [`windows/search_results.png`](../../windows/search_results.png): Captura visual limpia de la búsqueda real en la ventana nativa.
-- [`documentation/handoffs/W03-result.md`](../../documentation/handoffs/W03-result.md): Informe de entrega de W03.
+- [`windows/vite.config.js`](../../../../windows/vite.config.js): Remoción de la directiva `@ts-expect-error` obsoleta para `node:process`.
+- [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs): Inicialización tolerante a fallos de `SideBCore`, DTO `SongDto`, `BackendStatusDto` higienizado, `CommandError` estructurado y comandos `search_songs`, `get_backend_status`, `retry_init_core`.
+- [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): Interfaces TypeScript `SongDto`, `BackendStatusDto` y `CommandError`.
+- [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte): UI de búsqueda completa con control de concurrencia por ID de petición, sugerencias deshabilitadas durante la carga, estados de carga, vacío, error y resultados.
+- [`windows/search_results.png`](../screenshots/search_results.png): Captura visual limpia de la búsqueda real en la ventana nativa.
+- [`documentation/handoffs/W03-result.md`](W03-result.md): Informe de entrega de W03.
 
 ---
 

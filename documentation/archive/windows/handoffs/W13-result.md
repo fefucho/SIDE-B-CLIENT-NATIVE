@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W13 — Cola real mínima y navegación
 
 Fecha: 2026-09-30. Entrega W13 implementada; la validación manual de audio/UI queda pendiente.

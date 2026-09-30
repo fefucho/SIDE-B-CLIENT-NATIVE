@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # PLAN-014 — Acceso y sesión de Side B Windows
 
 Estado: W12b/W12c con acceso y restauración confirmados en esta PC; falta prueba de logout con cuenta real. W12d Biblioteca pendiente. Fecha: 2026-09-30.

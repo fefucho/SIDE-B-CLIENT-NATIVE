@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W02 — Shell Tauri 2 + Svelte + TypeScript en Windows (M1)
 
 **Fecha:** 2026-09-29.  
@@ -7,22 +9,22 @@
 
 ## 1. Alcance implementado
 
-- **Scaffold oficial:** Creado en [`windows/`](../../windows/) con Tauri 2, Svelte 5, TypeScript y pnpm v12 (template `svelte-ts` de `create-tauri-app`).
+- **Scaffold oficial:** Creado en [`windows/`](../../../../windows) con Tauri 2, Svelte 5, TypeScript y pnpm v12 (template `svelte-ts` de `create-tauri-app`).
 - **Identidad de la app:**
   - `productName`: `Side B`
   - `identifier`: `com.fefucho.sideb.windows`
   - Título de ventana: `Side B` (1100x720, min 800x600).
 - **Iconos y Favicon:**
-  - Generados con `pnpm tauri icon` a partir de [`apple/Resources/AppIcon copy.icon/Assets/NUEVO LOGO.png`](../../apple/Resources/AppIcon%20copy.icon/Assets/NUEVO%20LOGO.png) (sin modificar ningún archivo de `apple/`).
-  - Producidos todos los tamaños de Windows Appx, `icon.ico`, `icon.icns` y PNGs en [`windows/src-tauri/icons/`](../../windows/src-tauri/icons/).
-  - Favicon web generado en [`windows/static/favicon.png`](../../windows/static/favicon.png) y logotipo web en [`windows/static/logo.png`](../../windows/static/logo.png).
+  - Generados con `pnpm tauri icon` a partir de [`apple/Resources/AppIcon copy.icon/Assets/NUEVO LOGO.png`](../../../../apple/Resources/AppIcon%20copy.icon/Assets/NUEVO%20LOGO.png) (sin modificar ningún archivo de `apple/`).
+  - Producidos todos los tamaños de Windows Appx, `icon.ico`, `icon.icns` y PNGs en [`windows/src-tauri/icons/`](../../../../windows/src-tauri/icons).
+  - Favicon web generado en [`windows/static/favicon.png`](../../../../windows/static/favicon.png) y logotipo web en [`windows/static/logo.png`](../../../../windows/static/logo.png).
 - **Dependencia compartida con `core/`:**
-  - En [`windows/src-tauri/Cargo.toml`](../../windows/src-tauri/Cargo.toml): dependencia de ruta real `sideb-core = { path = "../../core/crates/sideb-core" }`.
-  - En [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs): comando IPC `get_backend_status` que referencia un tipo de `sideb-core` (`sideb_core::SideBError`). Es una prueba de compilación e IPC; aún no inicializa ni consulta `SideBCore`.
+  - En [`windows/src-tauri/Cargo.toml`](../../../../windows/src-tauri/Cargo.toml): dependencia de ruta real `sideb-core = { path = "../../core/crates/sideb-core" }`.
+  - En [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs): comando IPC `get_backend_status` que referencia un tipo de `sideb-core` (`sideb_core::SideBError`). Es una prueba de compilación e IPC; aún no inicializa ni consulta `SideBCore`.
   - No se implementó búsqueda, login ni audio (reservados para M2 y M3 en adelante).
 - **Documentación y CI:**
-  - Creado [`windows/README.md`](../../windows/README.md) con prerrequisitos, comandos, iconos y arquitectura.
-  - Creado [`.github/workflows/windows.yml`](../../.github/workflows/windows.yml) con pipeline para Windows x64 (`windows-latest`, test de crates de `core` y compilación de `windows/`).
+  - Creado [`windows/README.md`](../../../../windows/README.md) con prerrequisitos, comandos, iconos y arquitectura.
+  - Creado [`.github/workflows/windows.yml`](../../../../.github/workflows/windows.yml) con pipeline para Windows x64 (`windows-latest`, test de crates de `core` y compilación de `windows/`).
 
 ---
 
@@ -66,7 +68,7 @@ La verificación de la ventana renderizada arrojó el siguiente contenido textua
 - **Estado de conexión Rust:** `sideb-core connected (sideb_core::SideBError)` con indicador lumínico activo (verde).
 - **Interacción IPC:** Tarjeta con campo de entrada `Ingresá tu nombre...` y botón `Saludar`.
 - **Pie de página:** Referencia de arquitectura compartida `core/crates/sideb-core`.
-- **Evidencia gráfica:** Archivo de captura PNG guardado en [`windows/rendered_window.png`](../../windows/rendered_window.png), sin datos de usuario, cuentas ni URLs privadas.
+- **Evidencia gráfica:** Archivo de captura PNG guardado en [`windows/rendered_window.png`](../screenshots/rendered_window.png), sin datos de usuario, cuentas ni URLs privadas.
 
 ---
 
@@ -76,7 +78,7 @@ La verificación de la ventana renderizada arrojó el siguiente contenido textua
    - La unidad `C:` alcanzó 0 bytes libres durante la compilación inicial de los artefactos de depuración de Rust/V8/Tauri.
    - **Solución:** Se liberaron artefactos de depuración con `cargo clean` en `core/` y se redirigió `windows\src-tauri\target` mediante una unión NTFS local a `S:\sideb-target\windows`. La unión no forma parte de los archivos fuente ni es un requisito para otros equipos; allí se necesita espacio suficiente para los artefactos Rust.
 2. **Identificador del paquete:**
-   - Se ajustó el bundle identifier a `com.fefucho.sideb.windows` en [`windows/src-tauri/tauri.conf.json`](../../windows/src-tauri/tauri.conf.json) y [`windows/README.md`](../../windows/README.md).
+   - Se ajustó el bundle identifier a `com.fefucho.sideb.windows` en [`windows/src-tauri/tauri.conf.json`](../../../../windows/src-tauri/tauri.conf.json) y [`windows/README.md`](../../../../windows/README.md).
 3. **Iconos nativos:**
    - Sustituidos los iconos genéricos del scaffold ejecutando `tauri icon` a partir del arte original de Side B sin tocar `apple/`.
 

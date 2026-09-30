@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W12 — prototipo de acceso Windows
 
 Fecha: 2026-09-30. Estado: acceso y restauración tras reinicio confirmados por el usuario; logout aún no probado con cuenta real.

@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W10b/W10c + W19/W20 — Inicio, álbum y artista
 
 **Fecha:** 2026-09-30. **Estado:** implementación integrada y recorrido funcional básico aprobado por el usuario; paridad visual y casos especiales pendientes.

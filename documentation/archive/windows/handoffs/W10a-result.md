@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W10a — Inicio: composición según macOS
 
 **Fecha:** 2026-09-30. **Estado:** implementación integrada; validación visual parcial.

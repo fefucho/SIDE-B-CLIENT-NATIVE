@@ -1,7 +1,7 @@
 # 🎵 Side B (v2) - Estado del Proyecto y Hoja de Ruta Viva
 
 > **Última actualización**: 2026-09-29  
-> **Estado general**: macOS: PLAN-001–008 completados y PLAN-009 pendiente de validación manual/Release. Windows: M1/M2 y W06 verificados; el usuario confirmó audio audible; M3 sigue parcial por robustez y fallbacks pendientes.
+> **Estado general**: macOS: PLAN-001–008 completados y PLAN-009 pendiente de validación manual/Release. Windows: consultar la [guía vigente](../windows/README.md) y [backlog](../windows/BACKLOG.md).
 > **Objetivo central**: Reconstruir el cliente nativo de YouTube Music para macOS combinando la excelencia visual de **Side B Old** (Liquid Glass, ProMotion, centrado de isla flotante) con el rendimiento del motor en Rust (InnerTube nativo, PoToken, SQLite persistente).
 
 ---
@@ -28,11 +28,11 @@
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-> **Decisión de Plataforma**: macOS mantiene SwiftUI/AppKit y `AVPlayer` nativos. El port Windows usa un shell Tauri/Svelte separado y reutiliza el core Rust; W06 conecta `core/crates/player` con libmpv para una pista pública.
+> **Decisión de Plataforma**: macOS mantiene SwiftUI/AppKit y `AVPlayer` nativos. Windows usa un shell Tauri/Svelte separado y reutiliza el core Rust y `core/crates/player` con libmpv.
 
-### Estado Windows al 2026-09-29
+### Documentación Windows
 
-El checkout local contiene `windows/` con Tauri 2, Svelte 5 y TypeScript. Se aprobaron 87 pruebas de `innertube`, 79 de `sideb-core` y 4 del wrapper `player` en Windows (7 pruebas del core en vivo ignoradas). El shell compiló y abrió una ventana WebView2. W03–W05 añadieron búsqueda pública de canciones y álbumes, detalle con 13 pistas e Inicio con chips/secciones. W06 conectó `SideBCore::resolve_stream` y libmpv dentro de Rust: dos pistas públicas avanzaron en la ventana; pausa, reanudación, seek, volumen, EOF y reinicio pasaron una prueba automatizada. Codex repitió `pnpm check`, build web, `cargo check` y los cuatro tests de `player`; además construyó y abrió el binario de prueba sin Vite, buscó una canción y comprobó avance a `0:05`. El usuario confirmó después que escuchó la canción en su equipo; no hay medición instrumental de loopback. Ver [PLAN-013](plans/PLAN-013-side-b-windows-tauri.md) y las entregas [W01](handoffs/W01-result.md), [W02](handoffs/W02-result.md), [W03](handoffs/W03-result.md), [W04](handoffs/W04-result.md), [W05](handoffs/W05-result.md) y [W06](handoffs/W06-result.md). Quedan fallbacks de streams, sesión e instalador Windows. Esta copia no tiene `.git`, por lo que el CI definido no se ha ejecutado en remoto.
+Windows tiene su estado vigente en [windows/README.md](../windows/README.md), arquitectura en [ARCHITECTURE.md](../windows/ARCHITECTURE.md) y pendientes en [BACKLOG.md](../windows/BACKLOG.md). Los planes y entregas anteriores se conservaron en [archive/windows](archive/windows/README.md). El checkout ya tiene Git y un snapshot previo a la reorganización; la CI remota se comprueba aparte.
 
 ---
 

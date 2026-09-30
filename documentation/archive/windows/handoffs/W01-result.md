@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W01 — compatibilidad del core en Windows
 
 **Fecha:** 2026-09-29. **Estado:** compatibilidad del core comprobada; M1 sigue abierto hasta validar la ventana Tauri de W02. No se modificó código de `core/` ni de `apple/`.

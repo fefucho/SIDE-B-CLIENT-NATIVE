@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W06 — Primera Canción y Reproductor Mínimo en Windows (M2/M3 parcial)
 
 **Fecha:** 2026-09-29.  
@@ -8,14 +10,14 @@
 ## 1. Alcance implementado y arquitectura de audio
 
 - **Integración de `core/crates/player` y `libmpv` sin rutas hardcodeadas:**
-  - Se incorporó `core/crates/player` como miembro del workspace en [`core/Cargo.toml`](../../core/Cargo.toml) y como dependencia por ruta en [`windows/src-tauri/Cargo.toml`](../../windows/src-tauri/Cargo.toml).
+  - Se incorporó `core/crates/player` como miembro del workspace en [`core/Cargo.toml`](../../../../core/Cargo.toml) y como dependencia por ruta en [`windows/src-tauri/Cargo.toml`](../../../../windows/src-tauri/Cargo.toml).
   - Se eliminaron todas las rutas absolutas hardcodeadas (`S:\sideb-deps...`) de los scripts de build y del código de la app.
-  - La ruta a libmpv se parametriza mediante la variable de entorno explícita `SIDEB_MPV_DIR` en [`core/crates/player/build.rs`](../../core/crates/player/build.rs) y [`windows/src-tauri/build.rs`](../../windows/src-tauri/build.rs).
-  - `build.rs` copia `libmpv-2.dll` al directorio de salida (`target/debug/` o `target/release/`) comprobando errores explícitamente (`expect(...)`). En tiempo de ejecución, la aplicación en [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs) utiliza la DLL ubicada junto al ejecutable (`sideb-windows.exe`), haciendo que el binario sea portable y desacoplado del entorno de compilación.
+  - La ruta a libmpv se parametriza mediante la variable de entorno explícita `SIDEB_MPV_DIR` en [`core/crates/player/build.rs`](../../../../core/crates/player/build.rs) y [`windows/src-tauri/build.rs`](../../../../windows/src-tauri/build.rs).
+  - `build.rs` copia `libmpv-2.dll` al directorio de salida (`target/debug/` o `target/release/`) comprobando errores explícitamente (`expect(...)`). En tiempo de ejecución, la aplicación en [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs) utiliza la DLL ubicada junto al ejecutable (`sideb-windows.exe`), haciendo que el binario sea portable y desacoplado del entorno de compilación.
   - La creación del directorio de caché de audio maneja errores de forma segura sin ignorar fallos del sistema de archivos.
   - Los 4 tests unitarios de `player` pasaron satisfactoriamente en Windows x64.
 - **Resolución de streams y ciclo de vida de reproducción en Rust:**
-  - En [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs):
+  - En [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs):
     - `play_song(video_id, title, artists, thumbnail) -> Result<PlaybackStateDto, CommandError>`: resuelve el stream de forma asíncrona mediante `core.resolve_stream(video_id, false)`. Valida identificadores vacíos, libera cerrojos durante la espera de red y utiliza un contador generacional (`generation`) para descartar resoluciones lentas obsoletas si el usuario selecciona otra pista. Pasa la URL resuelta, las cabeceras requeridas y la ganancia de sonoridad (`loudness_db`) directamente a `player.load(&url, &headers, gain_db)` y llama a `player.play()`.
     - **Timing correcto:** `play_song` **no** marca `isPlaying = true` de forma prematura; devuelve inmediatamente `{ isPlaying: false, isLoading: true, isEnded: false, ... }`, delegando el estado de reproducción activo a la llegada del evento `PlayerEvent::Playing(true)` desde libmpv.
     - `pause_playback() -> Result<PlaybackStateDto, CommandError>`: pausa la reproducción en libmpv y actualiza el estado.
@@ -30,13 +32,13 @@
     - **Manejo de EOF:** Al llegar a fin de pista (`TrackEnded`), se actualiza `is_ended = true`, `is_playing = false` y `position = duration`, notificando de inmediato a la UI.
     - **Privacidad estricta:** Ni la URL de googlevideo ni las cabeceras HTTP o cookies se envían en eventos, DTOs, DOM o logs. Los errores se empaquetan en `CommandError` seguros y los registros de mpv se silenciaron (`LIMUSIC_MPV_LOG=no`).
 - **Interfaz Svelte 5 y controles reactivos:**
-  - En [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte):
+  - En [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte):
     - **Barra de reproducción persistente:** Ubicada en la parte inferior (`footer.player-bar`) con carátula de pista, título, artista, botón de transporte reactivo (`.play-toggle-btn`), deslizador interactivo de seek con tiempo actual y duración formateados (`m:ss`), deslizador de volumen (0–100%) y badge de error seguro.
     - **Reinicio ante EOF:** Cuando `playbackState.isEnded` es verdadero, el botón central adopta el icono de repetición/reinicio (⟲) y al hacer clic reinicia la reproducción de la pista actual desde el inicio.
     - **Filas interactivas:** Las filas de canciones en resultados de búsqueda y las pistas del detalle de álbum son botones interactivos accesibles por teclado (Enter / Espacio) y clic. Al activarse, muestran la indicación `► SONANDO` y borde resaltado.
     - **Suscripción y limpieza:** Listeners de eventos de Tauri tipados, sincronización de estado en `onMount` y desuscripción garantizada en el retorno de ciclo de vida.
 - **Tipos TypeScript:**
-  - En [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): interfaces `PlaybackTrackDto`, `PlaybackStateDto` (con campo `isEnded: boolean`) y `PlaybackProgressDto`.
+  - En [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): interfaces `PlaybackTrackDto`, `PlaybackStateDto` (con campo `isEnded: boolean`) y `PlaybackProgressDto`.
 
 ---
 
@@ -69,13 +71,13 @@
 
 ## 4. Evidencia visual
 
-- **Captura W06 - Reproducción de Canción desde Buscar:** [`windows/playback_search_song.png`](../../windows/playback_search_song.png):
+- **Captura W06 - Reproducción de Canción desde Buscar:** [`windows/playback_search_song.png`](../screenshots/playback_search_song.png):
   - Canción *"Instant Crush (feat. Julian Casablancas)"* seleccionada con etiqueta `► SONANDO`.
   - Barra de reproducción inferior visible: carátula del álbum, título, artista, botón de pausa activo, barra de seek con progreso `0:06 / 5:37` y volumen al 70%.
-- **Captura W06 - Reproducción de Pista desde Detalle de Álbum:** [`windows/playback_album_track.png`](../../windows/playback_album_track.png):
+- **Captura W06 - Reproducción de Pista desde Detalle de Álbum:** [`windows/playback_album_track.png`](../screenshots/playback_album_track.png):
   - Detalle del álbum *"Random Access Memories"* con 13 pistas reales.
   - Barra de reproducción inferior visible: carátula, pista *"The Game of Love"*, artista *"Daft Punk"*, botón de pausa activo, progreso `0:04 / 5:22` y volumen al 70%.
-- **Captura general de entrega:** [`windows/playback.png`](../../windows/playback.png).
+- **Captura general de entrega:** [`windows/playback.png`](../screenshots/playback.png).
 
 ---
 
@@ -89,13 +91,13 @@
 
 ## 6. Archivos modificados o agregados en W06
 
-- [`core/Cargo.toml`](../../core/Cargo.toml): Agregado `crates/player` a `workspace.members`.
-- [`core/crates/player/build.rs`](../../core/crates/player/build.rs): Script de build para resolver el enlace nativo con `mpv.lib` en Windows mediante la variable explícita `SIDEB_MPV_DIR` (sin rutas fijas).
-- [`windows/src-tauri/Cargo.toml`](../../windows/src-tauri/Cargo.toml): Añadida la dependencia `player = { path = "../../core/crates/player" }`.
-- [`windows/src-tauri/build.rs`](../../windows/src-tauri/build.rs): Configurado enlace de `mpv.lib` mediante `SIDEB_MPV_DIR` y copia obligatoria de `libmpv-2.dll` al directorio de destino del perfil sin tragar errores.
-- [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs): Inicialización de `Player`, directorio de caché de audio con manejo de error, bucle de eventos con manejo de `TrackEnded` (`is_ended = true`), comandos `play_song` (sin falso `isPlaying` prematuro), `pause_playback`, `resume_playback` (con guardia `is_idle` / `is_ended`), `seek_playback`, `set_playback_volume`, `get_playback_state`, DTOs de reproducción (`PlaybackStateDto.isEnded`) y privacidad estricta de logs y URLs.
-- [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): Tipos TypeScript `PlaybackTrackDto`, `PlaybackStateDto` (con `isEnded: boolean`) y `PlaybackProgressDto`.
-- [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte): Barra de reproducción persistente inferior, controles de transporte, seek y volumen, botón de reinicio al terminar la pista, interactividad en canciones y pistas de álbum, suscripciones a eventos con limpieza de listeners y adaptación accesible sin warnings.
-- [`windows/README.md`](../../windows/README.md): Documentación de configuración con variable explícita `SIDEB_MPV_DIR`, resolución de la DLL junto al ejecutable, hash y comandos reproducibles.
-- [`windows/playback_search_song.png`](../../windows/playback_search_song.png), [`windows/playback_album_track.png`](../../windows/playback_album_track.png), [`windows/playback.png`](../../windows/playback.png): Capturas de verificación visual actualizadas.
-- [`documentation/handoffs/W06-result.md`](../../documentation/handoffs/W06-result.md): Este informe de entrega.
+- [`core/Cargo.toml`](../../../../core/Cargo.toml): Agregado `crates/player` a `workspace.members`.
+- [`core/crates/player/build.rs`](../../../../core/crates/player/build.rs): Script de build para resolver el enlace nativo con `mpv.lib` en Windows mediante la variable explícita `SIDEB_MPV_DIR` (sin rutas fijas).
+- [`windows/src-tauri/Cargo.toml`](../../../../windows/src-tauri/Cargo.toml): Añadida la dependencia `player = { path = "../../core/crates/player" }`.
+- [`windows/src-tauri/build.rs`](../../../../windows/src-tauri/build.rs): Configurado enlace de `mpv.lib` mediante `SIDEB_MPV_DIR` y copia obligatoria de `libmpv-2.dll` al directorio de destino del perfil sin tragar errores.
+- [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs): Inicialización de `Player`, directorio de caché de audio con manejo de error, bucle de eventos con manejo de `TrackEnded` (`is_ended = true`), comandos `play_song` (sin falso `isPlaying` prematuro), `pause_playback`, `resume_playback` (con guardia `is_idle` / `is_ended`), `seek_playback`, `set_playback_volume`, `get_playback_state`, DTOs de reproducción (`PlaybackStateDto.isEnded`) y privacidad estricta de logs y URLs.
+- [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): Tipos TypeScript `PlaybackTrackDto`, `PlaybackStateDto` (con `isEnded: boolean`) y `PlaybackProgressDto`.
+- [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte): Barra de reproducción persistente inferior, controles de transporte, seek y volumen, botón de reinicio al terminar la pista, interactividad en canciones y pistas de álbum, suscripciones a eventos con limpieza de listeners y adaptación accesible sin warnings.
+- [`windows/README.md`](../../../../windows/README.md): Documentación de configuración con variable explícita `SIDEB_MPV_DIR`, resolución de la DLL junto al ejecutable, hash y comandos reproducibles.
+- [`windows/playback_search_song.png`](../screenshots/playback_search_song.png), [`windows/playback_album_track.png`](../screenshots/playback_album_track.png), [`windows/playback.png`](../screenshots/playback.png): Capturas de verificación visual actualizadas.
+- [`documentation/handoffs/W06-result.md`](W06-result.md): Este informe de entrega.

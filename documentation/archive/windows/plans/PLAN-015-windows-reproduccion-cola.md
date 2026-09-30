@@ -1,9 +1,11 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # PLAN-015 — Reproducción cotidiana y cola en Side B Windows
 
 - **Fecha:** 2026-09-30
 - **Estado:** W13 implementado y compilado; validación manual pendiente. W14–W17 propuestos.
 - **Alcance:** controles de transporte, cola, carátulas, modos de reproducción y continuidad en Windows.
-- **Relación:** desarrolla M7 de [PLAN-013](PLAN-013-side-b-windows-tauri.md) por entregas pequeñas. No sustituye [PLAN-003](PLAN-003-cola_automix_radio.md), que registra el trabajo macOS.
+- **Relación:** desarrolla M7 de [PLAN-013](PLAN-013-side-b-windows-tauri.md) por entregas pequeñas. No sustituye [PLAN-003](../../../plans/PLAN-003-cola_automix_radio.md), que registra el trabajo macOS.
 
 ## 1. Resultado esperado
 

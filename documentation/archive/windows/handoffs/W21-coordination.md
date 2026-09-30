@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W21 coordination — 2026-09-30
 
 ## Root Home/album/artist (thread 01a0ebab-deea-7152-95d7-cfdae6a6f6f1)

@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W05 — Inicio con Secciones y Chips Reales en Windows (M2 parcial)
 
 **Fecha:** 2026-09-29.  
@@ -8,18 +10,18 @@
 ## 1. Alcance implementado y revisiones aplicadas
 
 - **Contratos del core y comando IPC:**
-  - En [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs):
+  - En [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs):
     - `get_home_page(chip_params: Option<String>) -> Result<HomePageDto, CommandError>`: consume directamente `state.core.get_home_page(params)`. Maneja parámetros opcionales y normaliza cadenas vacías a `None`.
     - Conservados íntegramente los comandos previos: `search_songs`, `search_albums`, `get_album`, `get_backend_status` y `retry_init_core`.
 - **DTOs tipados (Rust & TypeScript):**
-  - **Chips de Inicio:** `HomeChipDto` en Rust y [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): `title: String`, `params: String`.
+  - **Chips de Inicio:** `HomeChipDto` en Rust y [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): `title: String`, `params: String`.
   - **Ítems de sección:** `HomeItemDto`: `kind`, `id`, `title`, `subtitle`, `thumbnail`, `duration`, `artists`, `albumId`.
   - **Secciones:** `HomeSectionDto`: `title`, `format` (`"largeCards"` / `"compactSongs"` / `"mixed"`), `items: Vec<HomeItemDto>`.
   - **Página completa:** `HomePageDto`: `chips: Vec<HomeChipDto>`, `sections: Vec<HomeSectionDto>`.
   - Sin tokens de biblioteca, cookies, URLs firmadas ni campos de sesión privada.
   - **Manejo de errores:** Reutilización de `CommandError` con mensaje genérico seguro (`HOME_FAILED`) ante contingencias de red, sin registrar datos privados ni filtrar errores crudos `format!("{e}")`.
 - **Interfaz Svelte 5 y correcciones de revisión temprana:**
-  - En [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte):
+  - En [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte):
     - **Encabezado limpio para el usuario:** Se eliminaron la insignia técnica *"Windows W05"*, el texto *"consumiendo SideBCore"* del subtítulo (ahora *"Página de inicio y búsqueda nativa"*) y la píldora verde *"Motor Side B conectado"*. Si el backend entra en fallo o no está listo, se muestra la barra de advertencia con el botón interactivo de reconexión.
     - **Desacoplamiento de IDs de petición por dominio:** Se reemplazó el ID global compartido por contadores independientes: `homeRequestId`, `searchRequestId` y `albumRequestId`. Cada bloque `finally` apaga su propio indicador (`isHomeLoading`, `isSearchLoading`, `isAlbumLoading`) si coincide con la última petición emitida en su dominio, evitando que peticiones concurrentes dejen vistas bloqueadas.
     - **Navegación fluida no bloqueante:** Las pestañas principales *Inicio* y *Buscar* permanecen accesibles en todo momento sin deshabilitarse. Se probó la secuencia rápida Inicio→Buscar→Inicio durante la carga en vuelo, comprobando que Inicio resuelve y renderiza su contenido normalmente sin quedar trabado en el spinner.
@@ -62,9 +64,9 @@
 
 ## 4. Evidencia visual
 
-- **Captura histórica W03:** [`windows/search_results.png`](../../windows/search_results.png) (búsqueda de canciones).
-- **Capturas históricas W04:** [`windows/album_search_results.png`](../../windows/album_search_results.png) (búsqueda de álbumes) y [`windows/album_detail.png`](../../windows/album_detail.png) (detalle de pistas).
-- **Captura W05 actualizada - Inicio con encabezado limpio:** [`windows/home_feed.png`](../../windows/home_feed.png) (respaldada en artefactos):
+- **Captura histórica W03:** [`windows/search_results.png`](../screenshots/search_results.png) (búsqueda de canciones).
+- **Capturas históricas W04:** [`windows/album_search_results.png`](../screenshots/album_search_results.png) (búsqueda de álbumes) y [`windows/album_detail.png`](../screenshots/album_detail.png) (detalle de pistas).
+- **Captura W05 actualizada - Inicio con encabezado limpio:** [`windows/home_feed.png`](../screenshots/home_feed.png) (respaldada en artefactos):
   - Encabezado depurado para usuario final: Logo, título *Side B*, subtítulo *Página de inicio y búsqueda nativa*. Sin badges técnicos ni indicadores verdes de diagnóstico.
   - Pestañas *Inicio* (activa en rojo) y *Buscar*.
   - Fila interactiva de chips de estado de ánimo (*Todos*, *Energize*, *Feel good*, *Workout*, *Relax*, *Party*, *Romance*, *Commute*, *Focus*, *Sad*, *Sleep*).
@@ -75,12 +77,12 @@
 
 ## 5. Archivos modificados o agregados en W05
 
-- [`windows/src-tauri/src/lib.rs`](../../windows/src-tauri/src/lib.rs): Comando `get_home_page`, DTOs `HomeChipDto`, `HomeItemDto`, `HomeSectionDto`, `HomePageDto`.
-- [`windows/src/lib/types.ts`](../../windows/src/lib/types.ts): Interfaces TypeScript equivalentes para el feed de inicio.
-- [`windows/src/routes/+page.svelte`](../../windows/src/routes/+page.svelte): Navegación Inicio / Buscar, chips dinámicos, renderizado de feed, IDs desacoplados (`homeRequestId`, `searchRequestId`, `albumRequestId`) y encabezado limpio.
-- [`windows/README.md`](../../windows/README.md): Actualizado con las capacidades vigentes de W05 y límites del proyecto.
-- [`windows/home_feed.png`](../../windows/home_feed.png): Captura visual limpia de la página de inicio en la ventana nativa.
-- [`documentation/handoffs/W05-result.md`](../../documentation/handoffs/W05-result.md): Informe de entrega de W05 con las correcciones aplicadas.
+- [`windows/src-tauri/src/lib.rs`](../../../../windows/src-tauri/src/lib.rs): Comando `get_home_page`, DTOs `HomeChipDto`, `HomeItemDto`, `HomeSectionDto`, `HomePageDto`.
+- [`windows/src/lib/types.ts`](../../../../windows/src/lib/types.ts): Interfaces TypeScript equivalentes para el feed de inicio.
+- [`windows/src/routes/+page.svelte`](../../../../windows/src/routes/+page.svelte): Navegación Inicio / Buscar, chips dinámicos, renderizado de feed, IDs desacoplados (`homeRequestId`, `searchRequestId`, `albumRequestId`) y encabezado limpio.
+- [`windows/README.md`](../../../../windows/README.md): Actualizado con las capacidades vigentes de W05 y límites del proyecto.
+- [`windows/home_feed.png`](../screenshots/home_feed.png): Captura visual limpia de la página de inicio en la ventana nativa.
+- [`documentation/handoffs/W05-result.md`](W05-result.md): Informe de entrega de W05 con las correcciones aplicadas.
 
 ---
 

@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # PLAN-016 — UI Windows: Inicio y vistas de catálogo como en macOS
 
 - **Fecha:** 2026-09-30.

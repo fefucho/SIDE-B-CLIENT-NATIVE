@@ -32,3 +32,14 @@ apple/.build/
 Updates/
 *.tmp
 *.log
+
+# Windows tooling and local work
+/scratch/
+**/node_modules/
+/windows/.cache/
+/windows/.svelte-kit/
+/windows/build/
+/windows/artifacts/
+**/.env
+**/.env.*
+!**/.env.example

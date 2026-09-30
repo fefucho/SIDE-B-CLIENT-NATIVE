@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # PLAN-013: Side B para Windows con Tauri y Svelte
 
 - **Fecha**: 2026-09-28
@@ -189,12 +191,12 @@ No trasladar perfiles, cookies ni bases de datos de la cuenta Mac a Windows para
 ## 7. Cómo documentar y reportar el trabajo
 
 - Este plan es el checklist vivo del port. Al cerrar cada hito, anotar la evidencia de salida y los bloqueos reales.
-- Para implementar por paquetes con Codex y Antigravity, usar [el flujo de agentes](../../.agents/WORKFLOW_WINDOWS.md). El primer encargo W01 comprueba el core en Windows antes de crear `windows/`.
-- Evidencia M1 del 2026-09-29: los tests de `innertube` y `sideb-core` pasaron con Build Tools 2022 ([W01](../handoffs/W01-result.md)); el shell Tauri compiló y mostró una ventana WebView2 con respuesta IPC de diagnóstico ([W02](../handoffs/W02-result.md), [captura](../../windows/rendered_window.png)). Ese gate no incluía búsqueda ni audio.
-- Evidencia parcial M2 del 2026-09-29: W03 creó una instancia del core en el directorio de datos de la app y mostró 20 canciones de una búsqueda pública real en la ventana ([informe](../handoffs/W03-result.md), [captura](../../windows/search_results.png)). `pnpm check`, `pnpm build` y `cargo check` aprobaron.
-- W04 agregó búsqueda de álbumes y abrió un detalle real con 13 pistas; ver [informe](../handoffs/W04-result.md), [captura de resultados](../../windows/album_search_results.png) y [captura de detalle](../../windows/album_detail.png).
-- W05 agregó Inicio público con chips y secciones reales. El chip *Energize* cambió el feed y se comprobó la navegación rápida Inicio→Buscar→Inicio; ver [informe](../handoffs/W05-result.md) y [captura](../../windows/home_feed.png).
-- W06 integró `resolve_stream` con libmpv y un reproductor de una pista. La prueba en la ventana comprobó avance, pausa, seek, volumen, fin y reinicio para pistas de búsqueda y álbum; ver [informe](../handoffs/W06-result.md), [captura de búsqueda](../../windows/playback_search_song.png) y [captura de álbum](../../windows/playback_album_track.png). El usuario confirmó después que escuchó la canción en su equipo; no hay medición instrumental de loopback. M2 queda cubierto; M3 sigue parcial.
+- Para implementar por paquetes con Codex y Antigravity, usar [el flujo de agentes](../agents/WORKFLOW_WINDOWS.md). El primer encargo W01 comprueba el core en Windows antes de crear `windows/`.
+- Evidencia M1 del 2026-09-29: los tests de `innertube` y `sideb-core` pasaron con Build Tools 2022 ([W01](../handoffs/W01-result.md)); el shell Tauri compiló y mostró una ventana WebView2 con respuesta IPC de diagnóstico ([W02](../handoffs/W02-result.md), [captura](../screenshots/rendered_window.png)). Ese gate no incluía búsqueda ni audio.
+- Evidencia parcial M2 del 2026-09-29: W03 creó una instancia del core en el directorio de datos de la app y mostró 20 canciones de una búsqueda pública real en la ventana ([informe](../handoffs/W03-result.md), [captura](../screenshots/search_results.png)). `pnpm check`, `pnpm build` y `cargo check` aprobaron.
+- W04 agregó búsqueda de álbumes y abrió un detalle real con 13 pistas; ver [informe](../handoffs/W04-result.md), [captura de resultados](../screenshots/album_search_results.png) y [captura de detalle](../screenshots/album_detail.png).
+- W05 agregó Inicio público con chips y secciones reales. El chip *Energize* cambió el feed y se comprobó la navegación rápida Inicio→Buscar→Inicio; ver [informe](../handoffs/W05-result.md) y [captura](../screenshots/home_feed.png).
+- W06 integró `resolve_stream` con libmpv y un reproductor de una pista. La prueba en la ventana comprobó avance, pausa, seek, volumen, fin y reinicio para pistas de búsqueda y álbum; ver [informe](../handoffs/W06-result.md), [captura de búsqueda](../screenshots/playback_search_song.png) y [captura de álbum](../screenshots/playback_album_track.png). El usuario confirmó después que escuchó la canción en su equipo; no hay medición instrumental de loopback. M2 queda cubierto; M3 sigue parcial.
 - `documentation/PROJECT_STATE.md`: actualizar arquitectura/estado vigente cuando exista un componente Windows funcional; no marcarlo completo por scaffold o build.
 - `documentation/FIXES_LOG.md`: registrar hitos estructurales y cambios de contrato, como indica `.agents/rules/00-project_rules.md`; los bugs pequeños van en commits/issues y en la nota del hito.
 - Para rendimiento, adjuntar a `documentation/audits/` escenario, hardware, build, método, antes/después y trazas; no inferir FPS o latencia por compilación o CPU baja.

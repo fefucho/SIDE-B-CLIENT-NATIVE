@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W08 — estructura y sidebar Windows
 
 Fecha: 2026-09-29. Implementado por Codex con componente `Sidebar` preparado por un subagente de Codex. Antigravity terminó W07 antes de iniciar este paquete.

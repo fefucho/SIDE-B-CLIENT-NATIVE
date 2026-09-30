@@ -1,3 +1,5 @@
+> Archivo histórico del port Windows. El flujo vigente está en [windows/README.md](../../../../windows/README.md).
+
 # W09 — barra de reproducción básica Windows
 
 Fecha: 2026-09-29. Componente preparado por un subagente de Codex e integrado por Codex.
