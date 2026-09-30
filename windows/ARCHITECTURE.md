@@ -10,7 +10,7 @@
 | Búsqueda | `src/lib/search/controller.ts` | Consultas por modo, caché de sesión e invalidación |
 | Catálogo | `src/lib/catalog/controller.ts` | Álbum, artista, grillas, snapshots y solicitudes pendientes |
 | Cuenta | `src/lib/account/controller.ts` | Biblioteca, likes, playlists e historial; cambios y paginación por cuenta |
-| Navegación/ventana | `src/lib/navigation/history.ts`, `window/controller.ts`, `components/shell/TitleBar.svelte` | Atrás/Adelante, snapshots y controles Tauri; fullscreen nativo con restauración |
+| Navegación/ventana | `src/lib/navigation/history.ts`, `window/controller.ts`, `components/shell/TitleBar.svelte` | Atrás/Adelante, snapshots y controles Tauri; F11 alterna fullscreen nativo |
 | Menús | `src/lib/menu/{types,policy,hooks,executor}.ts`, `components/menu/ContextMenu.svelte` | Política común de macOS, clic derecho/Más, disponibilidad y ejecución por controller |
 | Reproductor UI | `src/lib/player/controller.ts` | Comandos y eventos; snapshot de transporte publicado para barra/fullscreen |
 | Contratos frontend | `src/lib/types.ts`, `account/types.ts` | DTOs del bridge; estado de cuenta adicional tipado |
@@ -30,7 +30,7 @@ Una canción de Inicio inicia radio: carga audio y agrega recomendaciones del co
 
 Home y catálogo invalidan solicitudes al cambiar contexto; búsqueda y cuenta vacían datos/cachés privados al cambiar de cuenta. El historial conserva snapshots y scroll en pasado/futuro, limitado a 40 entradas por pila. Una visita nueva descarta el futuro; Atrás/Adelante invalidan cargas abandonadas y restauran el destino. Los cambios de cuenta vacían ambas pilas.
 
-Las acciones masivas de playlist resuelven continuaciones antes de reproducir/encolar y conservan setVideoId por ocurrencia. Edición/eliminación/orden validan permisos en el backend y los diálogos sólo cierran tras éxito. Los menús usan los mismos comandos que los botones. La barra superior reemplaza decoraciones Windows; el fullscreen del reproductor usa setFullscreen y limita el scroll a la lista derecha.
+Las acciones masivas de playlist resuelven continuaciones antes de reproducir/encolar y conservan setVideoId por ocurrencia. Edición/eliminación/orden validan permisos en el backend y los diálogos sólo cierran tras éxito. Los menús usan los mismos comandos que los botones. La barra superior reemplaza decoraciones Windows. Como en macOS, el reproductor expandido ocupa el área de contenido sin cambiar el tamaño de ventana; conserva sidebar, controles superiores y scroll sólo en la lista derecha. F11 controla por separado el fullscreen del sistema. La cápsula mantiene medidas fijas de controles y portada; sólo la metadata se trunca, y el volumen se despliega sin alterar el layout.
 
 Autenticación y almacenamiento sensible permanecen en el runtime. Los DTOs no incluyen cookies ni URLs firmadas. Las vistas muestran sólo el estado público de la sesión.
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import type { MenuAction, MenuItem } from '$lib/menu/types';
+  import MenuIcon from './MenuIcon.svelte';
 
   interface Props {
     items: MenuItem[];
@@ -116,7 +117,7 @@
             aria-disabled={item.disabled || undefined} aria-haspopup={item.children?.length ? 'menu' : undefined}
             aria-expanded={item.children?.length ? expandedId === item.id : undefined}
             disabled={item.disabled} onclick={() => choose(item)}>
-            <span>{item.label}</span><span class="trail" aria-hidden="true">{item.children?.length ? '›' : item.checked ? '✓' : ''}</span>
+            <span class="item-content"><MenuIcon name={item.icon} /><span>{item.label}</span></span><span class="trail" aria-hidden="true">{item.children?.length ? '›' : item.checked ? '✓' : ''}</span>
           </button>
           {#if item.children?.length && expandedId === item.id}
             <ul class="menu submenu" style:left={`${submenuLeft}px`} style:top={`${submenuTop}px`} role="menu" aria-label={item.label}>
@@ -125,7 +126,7 @@
                   <li role="none"><button class="menu-item" type="button" role={child.checked === undefined ? 'menuitem' : 'menuitemradio'} tabindex="-1" data-menu-id={child.id}
                     aria-disabled={child.disabled || undefined} aria-checked={child.checked === undefined ? undefined : child.checked}
                     disabled={child.disabled} onclick={() => choose(child)}>
-                    <span>{child.label}</span><span class="trail" aria-hidden="true">{child.checked ? '✓' : ''}</span>
+                    <span class="item-content"><MenuIcon name={child.icon} /><span>{child.label}</span></span><span class="trail" aria-hidden="true">{child.checked ? '✓' : ''}</span>
                   </button></li>
                 {/if}
               {/each}
@@ -142,6 +143,7 @@
   .menu { box-sizing: border-box; min-width: 208px; max-width: min(320px, calc(100vw - 16px)); max-height: min(420px, calc(100vh - 16px)); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid rgb(255 255 255 / 12%); border-radius: 9px; color: #f3f1f2; background: #29292f; box-shadow: 0 10px 30px rgb(0 0 0 / 45%); font: 13px/1.35 system-ui, "Segoe UI", sans-serif; }
   .menu-entry { position: relative; }
   .menu-item { display: flex; width: 100%; min-height: 32px; align-items: center; justify-content: space-between; gap: 20px; padding: 6px 9px; border: 0; border-radius: 5px; color: inherit; background: transparent; text-align: left; font: inherit; cursor: pointer; white-space: nowrap; }
+  .item-content { display: flex; min-width: 0; align-items: center; gap: 9px; }
   .menu-item:hover:not(:disabled), .menu-item:focus-visible { outline: 0; background: rgb(255 255 255 / 9%); }
   .menu-item:disabled { color: rgb(255 255 255 / 42%); cursor: default; }
   .trail { color: rgb(255 255 255 / 65%); }

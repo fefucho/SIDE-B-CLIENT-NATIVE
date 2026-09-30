@@ -222,6 +222,7 @@
   }
 
   function handleSwitchNav(nav: PrimaryNav) {
+    setPlayerFullscreen(false);
     if (nav === 'library' || nav === 'likes' || nav === 'history') { openAccountNav(nav); return; }
     if ((nav === 'home' && activeView === 'feed') || (nav === 'search' && activeView === 'search_results')) return;
     pushNavigation();
@@ -243,6 +244,7 @@
 
   async function handleWindowKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]')) return;
+    if (event.key === 'Escape' && document.querySelector('[data-volume-popover]')) return;
     if (event.key === "Escape" && isFullscreenOpen) {
       event.preventDefault();
       await setPlayerFullscreen(false);
@@ -293,6 +295,7 @@
 
   async function openAlbumDetail(id: string, _origin?: "home" | "search", remember = true) {
     if (!id.trim()) return;
+    setPlayerFullscreen(false);
     if (remember && activeView === 'album_detail' && lastAlbumBrowseId === id) return;
     if (remember) pushNavigation();
     activeView = "album_detail"; scrollContentToTop();
@@ -300,6 +303,7 @@
   }
   async function openArtistDetail(id: string, remember = true) {
     if (!id.trim()) return;
+    setPlayerFullscreen(false);
     if (remember && activeView === 'artist_detail' && lastArtistBrowseId === id) return;
     if (remember) pushNavigation();
     activeView = "artist_detail"; scrollContentToTop();
@@ -307,6 +311,7 @@
   }
   async function openCatalog(id: string, params: string | null, title: string, remember = true) {
     if (!id.trim()) return;
+    setPlayerFullscreen(false);
     if (remember && activeView === 'catalog' && catalogTarget?.id === id && catalogTarget.params === params) return;
     if (remember) pushNavigation();
     activeView = "catalog"; scrollContentToTop();
@@ -401,6 +406,7 @@
   }
 
   function openAccountNav(destination: 'library' | 'likes' | 'history') {
+    setPlayerFullscreen(false);
     if (primaryNav === destination && (activeView === 'library' || activeView === 'history' || activeView === 'playlist_detail' && lastPlaylistId === 'LM')) return;
     pushNavigation(); primaryNav = destination;
     if (destination === 'likes') { activeView = 'playlist_detail'; lastPlaylistId = 'LM'; void account.openPlaylist('LM'); }
@@ -410,6 +416,7 @@
   }
   function openPlaylist(id: string, remember = true) {
     if (!id.trim()) return;
+    setPlayerFullscreen(false);
     if (remember && activeView === 'playlist_detail' && lastPlaylistId?.replace(/^VL/, '') === id.replace(/^VL/, '')) return;
     if (remember) pushNavigation();
     activeView = 'playlist_detail'; lastPlaylistId = id; scrollContentToTop(); void account.openPlaylist(id);
@@ -468,12 +475,9 @@
   function handleSeek(seconds: number) { return player.seek(seconds); }
   function handleVolumeChange(volume: number) { return player.setVolume(volume); }
 
-  async function setPlayerFullscreen(open: boolean, panel = selectedPanel) {
-    shellError = null;
-    try {
-      if (open) { selectedPanel = panel; await nativeWindow.enterPlayerFullscreen(); isFullscreenOpen = true; }
-      else { await nativeWindow.exitPlayerFullscreen(); isFullscreenOpen = false; }
-    } catch (error) { shellError = extractErrorMessage(error, 'No se pudo cambiar el fullscreen.'); }
+  function setPlayerFullscreen(open: boolean, panel = selectedPanel) {
+    if (open) selectedPanel = panel;
+    isFullscreenOpen = open;
   }
   function handleMouseNavigation(event: MouseEvent) {
     if (event.button !== 3 && event.button !== 4) return;
@@ -613,7 +617,7 @@
 
 <div class="app-frame" class:sidebar-collapsed={sidebarCollapsed} class:fullscreen-open={isFullscreenOpen}>
   <TitleBar {canBack} {canForward} {sidebarCollapsed} onBack={goBackFromDetail} onForward={goForward}
-    onToggleSidebar={() => { if (isFullscreenOpen) void setPlayerFullscreen(false); sidebarCollapsed = !sidebarCollapsed; }} />
+    onToggleSidebar={() => { sidebarCollapsed = !sidebarCollapsed; }} />
   <Sidebar
     activeDestination={activeView === 'playlist_detail' ? lastPlaylistId === 'LM' ? 'likes' : 'playlist' : activeView === 'library' ? 'library' : activeView === 'history' ? 'history' : activeView === 'artist_detail' ? 'artist' : activeView === 'album_detail' || activeView === 'catalog' ? 'album' : primaryNav}
     onHome={() => handleSwitchNav("home")}
@@ -631,7 +635,7 @@
     onOpenPlaylist={openPlaylist} onOpenAlbum={openAlbumDetail}
   />
   <div class="content-column">
-<main class="shell" class:home-shell={activeView !== "search_results"}>
+<main class="shell" class:home-shell={activeView !== "search_results"} class:player-covered={isFullscreenOpen} inert={isFullscreenOpen}>
   {#if activeView === "search_results"}
   <header class="header">
     <img src="/logo.png" alt="Side B Logo" class="app-logo" />
@@ -771,7 +775,7 @@
 
 <div class="player-dock">
   <PlayerBar playback={playerBarState} onTogglePlayback={handleTogglePlay} onRetryPlayback={handleRetryPlayback} onPrevious={handlePrevious} onNext={handleNext} onSeek={handleSeek} onVolumeChange={handleVolumeChange} fullscreenOpen={isFullscreenOpen} onToggleFullscreen={() => setPlayerFullscreen(!isFullscreenOpen)}
-    {selectedPanel} onSelectPanel={(panel) => { void setPlayerFullscreen(true, panel); }}
+    {selectedPanel} onSelectPanel={(panel) => setPlayerFullscreen(!(isFullscreenOpen && selectedPanel === panel), panel)}
     onOpenArtist={(id) => { void setPlayerFullscreen(false); void openArtistDetail(id); }}
     onOpenAlbum={(id) => { void setPlayerFullscreen(false); void openAlbumDetail(id); }} onOpenMenu={openNowPlayingMenu}
     loggedIn={authStatus.state === 'ready'} liked={accountData.likedIds.has(playbackState.currentTrack?.videoId ?? '')}
@@ -832,18 +836,18 @@
     height: 100dvh;
     min-height: 0;
     box-sizing: border-box;
-    padding-top: var(--titlebar-height);
     background: #1b1b1e;
   }
 
   .app-frame.sidebar-collapsed { --sidebar-width: 60px; }
-  .app-frame.fullscreen-open { --sidebar-width: 0px; }
   .app-frame.fullscreen-open .content-column { overflow: hidden; }
 
   .content-column {
     flex: 1;
     min-width: 0;
     height: 100%;
+    box-sizing: border-box;
+    padding-top: var(--titlebar-height);
     overflow-y: auto;
     overflow-x: hidden;
     overflow-anchor: none;
@@ -865,6 +869,8 @@
     padding: 0;
     gap: 0;
   }
+
+  .shell.player-covered { visibility: hidden; }
 
   .backend-notice:has(.status-bar) {
     padding: 12px 28px 0;
@@ -950,9 +956,9 @@
   .player-dock {
     position: fixed;
     z-index: 100;
-    left: calc(var(--sidebar-width) + 16px);
-    right: 16px;
-    bottom: 16px;
+    left: calc(var(--sidebar-width) + 24px);
+    right: 24px;
+    bottom: 20px;
     display: flex;
     justify-content: center;
     pointer-events: none;

@@ -19,24 +19,20 @@ function fakeWindow(initial = false) {
   };
 }
 
-test('player fullscreen restores only the change it made', async () => {
+test('F11 enters and exits native fullscreen', async () => {
   const native = fakeWindow(false); const controller = new WindowController(async () => native.api);
-  await controller.enterPlayerFullscreen();
+  await controller.toggleNativeFullscreen();
   assert.equal(native.fullscreen, true);
-  await controller.exitPlayerFullscreen();
+  await controller.toggleNativeFullscreen();
   assert.equal(native.fullscreen, false);
   assert.deepEqual(native.calls, ['is', true, 'is', false]);
 });
 
-test('player fullscreen preserves an already fullscreen window and restores an external F11 toggle', async () => {
+test('F11 exits an already fullscreen window', async () => {
   const native = fakeWindow(true); const controller = new WindowController(async () => native.api);
-  await controller.enterPlayerFullscreen();
-  assert.deepEqual(native.calls, ['is']);
-  native.calls.length = 0;
   await controller.toggleNativeFullscreen();
   assert.equal(native.fullscreen, false);
-  await controller.exitPlayerFullscreen();
-  assert.equal(native.fullscreen, true);
+  assert.deepEqual(native.calls, ['is', false]);
 });
 
 test('native fullscreen actions are serialized and failures remain retryable', async () => {
@@ -48,14 +44,14 @@ test('native fullscreen actions are serialized and failures remain retryable', a
       await native.api.setFullscreen(value);
     },
   }));
-  await assert.rejects(controller.enterPlayerFullscreen(), error => error instanceof WindowControllerError && error.action === 'enter-player-fullscreen');
-  await controller.enterPlayerFullscreen();
+  await assert.rejects(controller.toggleNativeFullscreen(), error => error instanceof WindowControllerError && error.action === 'toggle-native-fullscreen');
+  await controller.toggleNativeFullscreen();
   assert.equal(native.fullscreen, true);
-  await controller.exitPlayerFullscreen();
+  await controller.toggleNativeFullscreen();
   assert.equal(native.fullscreen, false);
 });
 
-test('overlapping F11 and player transitions run in call order', async () => {
+test('overlapping F11 transitions run in call order', async () => {
   let releaseFirstRead;
   let signalFirstRead;
   const firstReadStarted = new Promise(resolve => { signalFirstRead = resolve; });
@@ -73,7 +69,7 @@ test('overlapping F11 and player transitions run in call order', async () => {
     },
     setFullscreen: async value => { calls.push(`set-${value}`); fullscreen = value; },
   }));
-  const entering = controller.enterPlayerFullscreen();
+  const entering = controller.toggleNativeFullscreen();
   const toggling = controller.toggleNativeFullscreen();
   await firstReadStarted;
   assert.deepEqual(calls, ['read-start']);

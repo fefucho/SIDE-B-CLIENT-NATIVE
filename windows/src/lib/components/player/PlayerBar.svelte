@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { PlaybackStateDto } from "$lib/types";
   type Panel = "queue" | "lyrics" | "related";
 
@@ -27,6 +28,25 @@
   let { playback, onTogglePlayback, onRetryPlayback, onPrevious, onNext, onSeek, onVolumeChange, fullscreenOpen, onToggleFullscreen, loggedIn = false, liked = false, likePending = false, onToggleLike, likeError = null, selectedPanel, onSelectPanel, onOpenArtist, onOpenAlbum, onOpenMenu }: Props = $props();
   let seekDraft = $state<{ generation: number; value: number } | null>(null);
   let failedArtworkUrl = $state<string | null>(null);
+  let volumeOpen = $state(false);
+  let volumeRoot: HTMLDivElement;
+  let volumeButton: HTMLButtonElement;
+  let volumeSlider = $state<HTMLInputElement>();
+
+  async function toggleVolume() {
+    volumeOpen = !volumeOpen;
+    if (volumeOpen) { await tick(); volumeSlider?.focus(); }
+  }
+  function dismissVolume(event: PointerEvent) {
+    if (volumeOpen && event.target instanceof Node && !volumeRoot?.contains(event.target)) volumeOpen = false;
+  }
+  function handleVolumeKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape" && volumeOpen) {
+      event.preventDefault();
+      volumeOpen = false;
+      volumeButton?.focus();
+    }
+  }
 
   const duration = $derived(finitePositive(playback.duration));
   const position = $derived(clamp(seekDraft?.generation === playback.generation ? seekDraft.value : playback.position, 0, duration));
@@ -71,6 +91,8 @@
     onVolumeChange(clamp(Number((event.currentTarget as HTMLInputElement).value), 0, 100));
   }
 </script>
+
+<svelte:window onpointerdown={dismissVolume} onkeydown={handleVolumeKeydown} />
 
 <footer class="player-bar" aria-label="Reproductor de audio">
   <div class="progress">
@@ -185,9 +207,13 @@
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
         </button>
       {/if}
-      <div class="volume">
-        <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>
-        <input
+      <div class="volume" bind:this={volumeRoot}>
+        <button bind:this={volumeButton} type="button" class="volume-toggle" aria-label="Mostrar volumen" title={`Volumen: ${Math.round(volume)}%`} aria-expanded={volumeOpen} aria-controls="player-volume" onclick={toggleVolume}>
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>
+        </button>
+        {#if volumeOpen}
+        <div id="player-volume" class="volume-popover" data-volume-popover role="group" aria-label="Control de volumen">
+        <input bind:this={volumeSlider}
           type="range"
           min="0"
           max="100"
@@ -198,6 +224,8 @@
           aria-label="Volumen"
         />
         <span class="volume-value">{Math.round(volume)}%</span>
+        </div>
+        {/if}
       </div>
       <button
         type="button"
@@ -224,7 +252,7 @@
     height: 74px;
     min-height: 74px;
     max-height: 74px;
-    padding: 7px 20px 8px;
+    padding: 7px 16px 8px;
     color: #f5f5f6;
     background: rgba(36, 36, 42, 0.94);
     border: 1px solid rgba(255, 255, 255, 0.13);
@@ -232,7 +260,6 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
-    container-type: inline-size;
   }
 
   .progress {
@@ -290,7 +317,7 @@
     display: grid;
     grid-template-columns: 102px minmax(0, 1fr) max-content;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     min-height: 42px;
   }
 
@@ -353,12 +380,12 @@
 
   .artwork img { width: 100%; height: 100%; object-fit: cover; }
   .artwork svg { width: 18px; height: 18px; }
-  .metadata { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .metadata { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
   .title, .artist, .status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title { font-size: 13px; font-weight: 600; }
   .artist, .status { color: #b9b9c2; font-size: 11px; }
   .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
-  .metadata-link { max-width: 42%; padding: 0; overflow: hidden; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .metadata-link { min-width: 0; max-width: 60%; padding: 0; overflow: hidden; border: 0; color: #b9b9c2; background: transparent; font: inherit; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   .metadata-link:hover { color: #fff; text-decoration: underline; }
   .metadata-separator { flex: none; color: #777780; }
   .album { min-width: 0; }
@@ -375,8 +402,11 @@
   .panel-shortcut, .more-toggle { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 7px; color: rgb(255 255 255 / 65%); background: transparent; cursor: pointer; }
   .panel-shortcut svg, .more-toggle svg { width: 17px; height: 17px; }
   .panel-shortcut:hover, .panel-shortcut.panel-active, .more-toggle:hover { color: #fff; background: rgb(255 255 255 / 10%); }
-  .volume { display: flex; flex: 0 1 140px; align-items: center; gap: 8px; min-width: 72px; }
-  .volume svg { flex: 0 0 18px; width: 18px; height: 18px; color: #c6c6cd; }
+  .volume { position: relative; flex: 0 0 32px; width: 32px; height: 32px; }
+  .volume-toggle { display: grid; place-items: center; width: 32px; height: 32px; padding: 7px; border: 0; border-radius: 7px; color: #c6c6cd; background: transparent; cursor: pointer; }
+  .volume-toggle:hover, .volume-toggle[aria-expanded="true"] { color: #fff; background: rgb(255 255 255 / 10%); }
+  .volume svg { width: 18px; height: 18px; }
+  .volume-popover { position: absolute; right: 0; bottom: 42px; z-index: 2; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: 180px; padding: 14px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 16px; background: #29292f; box-shadow: 0 6px 24px rgb(0 0 0 / 40%); }
   .volume input { height: 8px; border-radius: 8px; }
   .volume input::-webkit-slider-thumb { width: 10px; height: 10px; border-radius: 50%; }
   .volume input::-moz-range-thumb { width: 10px; height: 10px; border-radius: 50%; }
@@ -389,38 +419,6 @@
   button:focus-visible, input:focus-visible {
     outline: 2px solid #d06c70;
     outline-offset: 3px;
-  }
-
-  @container (max-width: 760px) {
-    .player-bar { padding-right: 12px; padding-left: 12px; }
-    .main-row { grid-template-columns: 90px minmax(0, 1fr) max-content; gap: 6px; }
-    .transport { gap: 2px; }
-    .skip { width: 25px; }
-    .play-toggle { width: 34px; height: 34px; }
-    .volume-value { display: none; }
-    .volume { flex-basis: 74px; min-width: 62px; gap: 5px; }
-    .track { gap: 7px; padding-left: 7px; }
-    .artwork { flex-basis: 36px; width: 36px; height: 36px; }
-    .end-controls { gap: 3px; }
-    .panel-shortcut, .more-toggle { flex-basis: 25px; width: 25px; height: 28px; }
-  }
-
-  @container (max-width: 540px) {
-    .progress { grid-template-columns: 32px minmax(0, 1fr) 32px; gap: 5px; }
-    .main-row { grid-template-columns: 78px minmax(0, 1fr) max-content; gap: 4px; }
-    .transport { gap: 0; }
-    .skip { width: 21px; padding: 4px; }
-    .play-toggle { width: 32px; height: 32px; }
-    .track { gap: 6px; padding-left: 5px; }
-    .artwork { flex-basis: 32px; width: 32px; height: 32px; }
-    .title { font-size: 11px; }
-    .artist, .status { font-size: 10px; }
-    .like-toggle { flex-basis: 24px; width: 24px; height: 26px; padding: 4px; }
-    .end-controls { gap: 1px; }
-    .panel-shortcut, .more-toggle { flex-basis: 23px; width: 23px; padding: 4px; }
-    .volume { min-width: 40px; flex-basis: 44px; }
-    .volume svg { flex-basis: 16px; width: 16px; height: 16px; }
-    .fullscreen-toggle { flex-basis: 27px; width: 27px; }
   }
 
   @media (prefers-reduced-motion: reduce) {

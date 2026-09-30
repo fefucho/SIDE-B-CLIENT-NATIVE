@@ -3,16 +3,12 @@ export interface WindowFullscreenApi {
   setFullscreen(fullscreen: boolean): Promise<void>;
 }
 
-export type WindowAction = 'enter-player-fullscreen' | 'exit-player-fullscreen' | 'toggle-native-fullscreen';
+export type WindowAction = 'toggle-native-fullscreen';
 
 export class WindowControllerError extends Error {
   constructor(readonly action: WindowAction, cause: unknown) {
     const detail = cause instanceof Error ? cause.message : String(cause);
-    const message = action === 'enter-player-fullscreen'
-      ? 'No se pudo activar la pantalla completa de reproducción.'
-      : action === 'exit-player-fullscreen'
-        ? 'No se pudo restaurar el tamaño anterior de la ventana.'
-        : 'No se pudo cambiar la pantalla completa de la ventana.';
+    const message = 'No se pudo cambiar la pantalla completa de la ventana.';
     super(detail ? `${message} ${detail}` : message, { cause });
     this.name = 'WindowControllerError';
   }
@@ -30,38 +26,11 @@ async function tauriWindowApi(): Promise<WindowFullscreenApi> {
   };
 }
 
-/** Serializes native window transitions and restores only the state changed for player fullscreen. */
+/** Serializes F11 transitions. Expanded player presentation belongs to the app UI. */
 export class WindowController {
   private operationQueue: Promise<void> = Promise.resolve();
-  private playerFullscreenPrevious: boolean | null = null;
 
   constructor(private readonly apiProvider: () => Promise<WindowFullscreenApi> = tauriWindowApi) {}
-
-  enterPlayerFullscreen(): Promise<void> {
-    return this.enqueue('enter-player-fullscreen', async api => {
-      if (this.playerFullscreenPrevious !== null) return;
-      const wasFullscreen = await api.isFullscreen();
-      this.playerFullscreenPrevious = wasFullscreen;
-      if (!wasFullscreen) {
-        try {
-          await api.setFullscreen(true);
-        } catch (error) {
-          this.playerFullscreenPrevious = null;
-          throw error;
-        }
-      }
-    });
-  }
-
-  exitPlayerFullscreen(): Promise<void> {
-    return this.enqueue('exit-player-fullscreen', async api => {
-      const previous = this.playerFullscreenPrevious;
-      if (previous === null) return;
-      const current = await api.isFullscreen();
-      if (current !== previous) await api.setFullscreen(previous);
-      this.playerFullscreenPrevious = null;
-    });
-  }
 
   toggleNativeFullscreen(): Promise<void> {
     return this.enqueue('toggle-native-fullscreen', async api => {

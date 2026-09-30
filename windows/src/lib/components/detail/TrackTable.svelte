@@ -24,11 +24,13 @@
         <tr class:active oncontextmenu={menu.onContextMenu}>
           <td class="index"><button type="button" class="row-play" aria-label={`Reproducir ${track.title}`} onclick={() => onPlay(index)}>{#if active && isPlaying}<span aria-hidden="true">♫</span>{:else if numbered}<span aria-hidden="true">{index + 1}</span>{:else}<span aria-hidden="true">▶</span>{/if}</button></td>
           <td class="track-cell">
-            {#if track.thumbnail && !failedImages.has(index)}<img class="cover" src={track.thumbnail} alt="" loading="lazy" onerror={() => markImageFailed(index)} />{:else}<div class="cover fallback" aria-hidden="true">♫</div>{/if}
-            <div class="song-meta"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={menu.onKeyDown} title={track.title}>{track.title}</button>
-              <div class="artist-line">
-                {#if track.artistId && onOpenArtist}<button type="button" class="metadata-link" onclick={() => onOpenArtist!(track.artistId!)}>{track.artists}</button>
-                {:else}<span>{track.artists}</span>{/if}
+            <div class="track-cell-content">
+              {#if track.thumbnail && !failedImages.has(index)}<img class="cover" src={track.thumbnail} alt="" loading="lazy" onerror={() => markImageFailed(index)} />{:else}<div class="cover fallback" aria-hidden="true">♫</div>{/if}
+              <div class="song-meta"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={menu.onKeyDown} title={track.title}>{track.title}</button>
+                <div class="artist-line">
+                  {#if track.artistId && onOpenArtist}<button type="button" class="metadata-link" onclick={() => onOpenArtist!(track.artistId!)}>{track.artists}</button>
+                  {:else}<span>{track.artists}</span>{/if}
+                </div>
               </div>
             </div>
           </td>
@@ -47,14 +49,15 @@
   table { width: 100%; min-width: 430px; border-collapse: collapse; table-layout: fixed; color: #aaaab1; font-size: 12px; }
   table.with-album { min-width: 600px; }
   th { height: 32px; border-bottom: 1px solid rgb(255 255 255 / 9%); font-size: 11px; font-weight: 450; text-align: left; }
-  td { height: 52px; border-bottom: 1px solid rgb(255 255 255 / 4%); }
+  td { box-sizing: border-box; height: 52px; border-bottom: 1px solid rgb(255 255 255 / 4%); vertical-align: middle; }
   tbody tr:hover { background: rgb(255 255 255 / 5%); }
   tbody tr.active .song-title { color: var(--sideb-highlight, #d06c70); font-weight: 650; }
   .index { width: 42px; text-align: center; }
   .row-play { width: 30px; height: 32px; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
   .row-play:hover, .row-play:focus-visible, tr:hover .row-play { color: #fff; }
   .track-heading { padding-left: 8px; }
-  .track-cell { display: flex; align-items: center; gap: 11px; min-width: 0; padding: 0 8px; }
+  .track-cell { min-width: 0; padding: 0 8px; }
+  .track-cell-content { display: flex; width: 100%; min-width: 0; height: 50px; align-items: center; gap: 11px; }
   .cover { flex: none; width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: #303036; }
   .fallback { display: grid; place-items: center; color: #c9c9cf; font-size: 20px; }
   .song-meta { display: flex; min-width: 0; flex-direction: column; gap: 3px; }

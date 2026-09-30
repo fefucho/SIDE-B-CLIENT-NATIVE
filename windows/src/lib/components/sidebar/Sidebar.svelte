@@ -222,6 +222,7 @@
     height: 100%;
     min-height: 0;
     box-sizing: border-box;
+    padding-top: 52px;
     color: #f3f1f2;
     background: var(--sidebar-surface);
     border-right: 1px solid rgb(255 255 255 / 8%);
@@ -233,7 +234,7 @@
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 52px 10px 16px;
+    padding: 0 10px 16px;
     box-sizing: border-box;
     scrollbar-width: thin;
   }
