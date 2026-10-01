@@ -1,5 +1,5 @@
 <script lang="ts">
-  type Icon = 'shuffle' | 'backward' | 'forward' | 'repeat' | 'lyrics' | 'annotations' | 'queue' | 'related' | 'output';
+  type Icon = 'shuffle' | 'backward' | 'forward' | 'repeat' | 'lyrics' | 'annotations' | 'queue' | 'related';
   let { name, size = 16 }: { name: Icon; size?: number } = $props();
 </script>
 
@@ -21,8 +21,6 @@
     <path d="M8 5h13M8 12h13M8 19h13" /><path d="M3 5h.01M3 12h.01M3 19h.01" stroke-width="3" />
   {:else if name === 'related'}
     <path d="M3 6h9M3 10h9M3 14h7M17 16V4l5-2v5l-5 2" /><ellipse cx="14.5" cy="17.5" rx="2.5" ry="2" fill="currentColor" stroke="none" />
-  {:else if name === 'output'}
-    <path d="M5.5 18.5a9.2 9.2 0 1 1 13 0M8 16a5.7 5.7 0 1 1 8 0M10 13.5a2.8 2.8 0 1 1 4 0" /><path d="m12 14-6 8h12l-6-8Z" fill="currentColor" stroke-width="1" />
   {/if}
 </svg>
 

@@ -104,6 +104,46 @@ test('selecting a duplicate song passes its stable occurrence ID to Rust', async
   assert.equal(args.queueEntryId, 'second'); assert.equal(args.preserveQueue, true); assert.equal(args.queueItems, null);
 });
 
+test('queue reorder uses occurrence IDs and preserves newer progress without playing again', async () => {
+  const listeners = new Map(); const moved = deferred(); const calls = [];
+  const items = ['first', 'active', 'last'].map(entryId => ({ ...song('same'), entryId, duration: 201 }));
+  const player = new PlaybackController(async (command, args) => {
+    calls.push({ command, args });
+    if (command === 'get_playback_state') return state(4, { isPlaying: true, position: 30,
+      currentTrack: { ...song('same'), duration: 201 }, queue: { items, currentIndex: 1, revision: 8 } });
+    if (command === 'move_queue_entry') return moved.promise;
+    throw new Error(command);
+  }, async (event, handler) => { listeners.set(event, handler); return () => {}; }, () => {});
+  await player.connect();
+  const pending = player.moveQueueEntry('first', null);
+  assert.deepEqual(calls[1], { command: 'move_queue_entry', args: { entryId: 'first', beforeEntryId: null } });
+  assert.deepEqual(player.snapshot.state.queue.items.map(entry => entry.entryId), ['first', 'active', 'last']);
+  listeners.get('playback-progress')({ payload: { generation: 4, position: 31, duration: 201 } });
+  moved.resolve(state(4, { isPlaying: true, position: 30, currentTrack: { ...song('same'), duration: 201 },
+    queue: { items: [items[1], items[2], items[0]], currentIndex: 0, revision: 9 } }));
+  await pending;
+  assert.deepEqual(player.snapshot.state.queue.items.map(entry => entry.entryId), ['active', 'last', 'first']);
+  assert.equal(player.snapshot.state.queue.currentIndex, 0);
+  assert.equal(player.snapshot.state.generation, 4);
+  assert.equal(player.snapshot.state.position, 31);
+  assert.equal(player.snapshot.state.isPlaying, true);
+  assert.equal(calls.length, 2);
+});
+
+test('stale reorder destination reports failure and leaves playable snapshot intact', async () => {
+  let args;
+  const player = new PlaybackController(async (command, input) => {
+    if (command === 'get_playback_state') return state(4, { isPlaying: true, position: 30 });
+    args = input;
+    throw new Error('destination no longer in queue');
+  }, async () => () => {}, () => {});
+  await player.connect();
+  const before = player.snapshot;
+  await assert.rejects(player.moveQueueEntry('first', 'stale'), /destination/);
+  assert.deepEqual(args, { entryId: 'first', beforeEntryId: 'stale' });
+  assert.deepEqual(player.snapshot, before);
+});
+
 test('initial snapshot cannot replace a newer playback state event', async () => {
   const snapshot = deferred(); const listeners = new Map(); let published;
   const player = new PlaybackController(async (command) => {

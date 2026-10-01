@@ -25,6 +25,8 @@
   import SearchView from "$lib/components/search/SearchView.svelte";
   import { SearchController, emptySearchData, type SearchMode, type SearchData } from "$lib/search/controller";
   import { PlaybackController, emptyPlaybackData, parseDuration } from "$lib/player/controller";
+  import { LyricsController, emptyLyricsState } from '$lib/player/lyrics';
+  import { RecommendationsController, emptyRecommendationsSnapshot } from '$lib/player/recommendations';
   import FullscreenNowPlaying from "$lib/components/fullscreen/FullscreenNowPlaying.svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -121,6 +123,18 @@
       playbackError = snapshot.error;
     });
   const playerBarState = $derived({ ...playbackState, error: playbackError || playbackState.error });
+  let lyricsState = $state(emptyLyricsState());
+  const lyrics = new LyricsController((command, args) => invoke(command, args), state => { lyricsState = state; });
+  let recommendationsState = $state(emptyRecommendationsSnapshot());
+  const recommendations = new RecommendationsController((command, args) => invoke(command, args), snapshot => { recommendationsState = snapshot; });
+
+  $effect(() => {
+    // Account changes invalidate pending requests even when the playing track is unchanged.
+    authStatus.state; authStatus.email;
+    lyrics.setTrack(playbackState.currentTrack, playbackState.generation, playbackState.duration);
+    recommendations.setTrack(playbackState.currentTrack);
+    if (isFullscreenOpen && selectedPanel === 'related') void recommendations.load();
+  });
 
   let sessionRevision = 0;
 
@@ -134,6 +148,8 @@
       catalog.reset();
       ++sessionRevision;
       player.invalidatePending();
+      lyrics.reset();
+      recommendations.reset();
       account.reset(next.state === "ready");
       lastPlaylistId = null;
       navigationHistory.clear(); updateHistoryAvailability();
@@ -245,6 +261,7 @@
 
   async function handleWindowKeydown(event: KeyboardEvent) {
     if (event.defaultPrevented || document.querySelector('[role="dialog"], [role="menu"]')) return;
+    if (event.key === 'Escape' && document.querySelector('[data-queue-dragging="true"]')) return;
     if (event.key === 'Escape' && document.querySelector('[data-volume-popover]')) return;
     if (event.key === "Escape" && isFullscreenOpen) {
       event.preventDefault();
@@ -609,6 +626,8 @@
       window.removeEventListener('mousedown', handleMouseNavigation);
       window.removeEventListener('auxclick', handleMouseNavigation);
       void player.dispose();
+      lyrics.dispose();
+      recommendations.dispose();
       home.reset();
       search.reset();
       catalog.reset();
@@ -789,6 +808,13 @@
   </div>
   {#if isFullscreenOpen}
     <FullscreenNowPlaying playback={playerBarState} onSelectQueue={playQueueIndex} onClose={() => setPlayerFullscreen(false)}
+      onMoveQueue={(entryId, beforeEntryId) => player.moveQueueEntry(entryId, beforeEntryId)}
+      {lyricsState} {recommendationsState} onSeek={handleSeek} onRetryLyrics={() => { void lyrics.retry(); }}
+      onRefreshRecommendations={() => { void recommendations.load(true); }}
+      onPlayRecommendation={(song) => { ++collectionPlayRevision; void player.startRadio(song).catch(() => {}); }}
+      onEnqueueRecommendation={(song) => { void player.enqueue([song], 'next').catch(error => shellError = extractErrorMessage(error, 'No se pudo agregar a la cola.')); }}
+      onSongContextMenu={(event, song) => menuService.open(event, {kind:'song', song})}
+      onArtistContextMenu={(event, card) => menuService.open(event, {kind:'artist', card})}
       {selectedPanel} onSelectPanel={(panel) => selectedPanel = panel}
       loggedIn={authStatus.state === 'ready'} liked={accountData.likedIds.has(playbackState.currentTrack?.videoId ?? '')}
       likePending={accountData.pendingIds.has(playbackState.currentTrack?.videoId ?? '')}

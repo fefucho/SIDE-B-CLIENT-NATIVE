@@ -8,6 +8,8 @@ mod commands {
     pub(crate) mod account;
     pub(crate) mod catalog;
     pub(crate) mod playback;
+    pub(crate) mod lyrics;
+    pub(crate) mod recommendations;
 }
 pub use dto::*;
 use queue::{next_owner_epoch, QueueStateDto};
@@ -539,6 +541,10 @@ pub fn run() {
             commands::playback::retry_radio,
             commands::playback::enqueue_tracks,
             commands::playback::remove_queue_entry,
+            commands::playback::move_queue_entry,
+            commands::lyrics::get_lyrics,
+            commands::recommendations::get_related_tracks,
+            commands::recommendations::get_related_artists,
             commands::playback::next_track,
             commands::playback::previous_track,
             commands::playback::pause_playback,

@@ -889,6 +889,37 @@ pub(crate) fn remove_queue_entry(
     Ok(snapshot)
 }
 
+#[tauri::command]
+pub(crate) fn move_queue_entry(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    entry_id: String,
+    before_entry_id: Option<String>,
+) -> Result<PlaybackStateDto, CommandError> {
+    let entry_id = entry_id.trim();
+    let before_entry_id = before_entry_id.as_deref().map(str::trim);
+    if entry_id.is_empty() || before_entry_id.is_some_and(str::is_empty) {
+        return Err(CommandError::new("INVALID_QUEUE_ENTRY", "El identificador de ocurrencia no puede estar vacío."));
+    }
+    let (snapshot, changed) = {
+        let mut playback = state.playback.lock()
+            .map_err(|_| CommandError::new("LOCK_ERROR", "No se pudo actualizar la cola."))?;
+        let changed = playback.queue.move_entry(entry_id, before_entry_id).map_err(|error| {
+            match error {
+                crate::queue::QueueMoveError::EntryNotFound => CommandError::new("QUEUE_ENTRY_NOT_FOUND", "La canción ya no está en la cola."),
+                crate::queue::QueueMoveError::TargetNotFound => CommandError::new("QUEUE_TARGET_NOT_FOUND", "La posición de destino ya no está en la cola."),
+            }
+        })?;
+        (playback.to_dto(), changed)
+    };
+    // Reordering only changes the list: it must not reload audio or consume its generation.
+    if changed {
+        let _ = app.emit("playback-state-changed", &snapshot);
+        maybe_prefetch_radio(app);
+    }
+    Ok(snapshot)
+}
+
 pub(crate) fn handle_track_ended(app: tauri::AppHandle) {
     let state = app.state::<AppState>();
     let (snapshot, next) = {

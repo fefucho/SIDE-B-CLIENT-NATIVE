@@ -207,6 +207,9 @@ export class PlaybackController {
   async removeQueueEntry(entryId: string) {
     return this.queueCommand('remove_queue_entry', { entryId });
   }
+  async moveQueueEntry(entryId: string, beforeEntryId: string | null) {
+    return this.queueCommand('move_queue_entry', { entryId, beforeEntryId });
+  }
   async retryRadio() { return this.queueCommand('retry_radio', {}); }
 
   /** Queue mutations must report failure to menus without marking playable audio as broken. */

@@ -279,6 +279,31 @@ impl QueueStateDto {
         Ok(true)
     }
 
+    /// Moves one occurrence before another (or to the end), preserving the playing occurrence.
+    pub fn move_entry(
+        &mut self,
+        entry_id: &str,
+        before_entry_id: Option<&str>,
+    ) -> Result<bool, QueueMoveError> {
+        let from = self.items.iter().position(|entry| entry.entry_id == entry_id)
+            .ok_or(QueueMoveError::EntryNotFound)?;
+        let before = match before_entry_id {
+            Some(id) => self.items.iter().position(|entry| entry.entry_id == id)
+                .ok_or(QueueMoveError::TargetNotFound)?,
+            None => self.items.len(),
+        };
+        if before == from || before == from + 1 {
+            return Ok(false);
+        }
+        let active_id = self.current().map(|entry| entry.entry_id);
+        let entry = self.items.remove(from);
+        let target = if from < before { before - 1 } else { before };
+        self.items.insert(target, entry);
+        self.current_index = active_id.and_then(|id| self.items.iter().position(|entry| entry.entry_id == id));
+        self.revision += 1;
+        Ok(true)
+    }
+
     pub fn begin_radio(&mut self) {
         self.radio = Some(QueueRadioDto {
             loading: true,
@@ -346,6 +371,12 @@ impl QueueStateDto {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueueRemoveError {
     CurrentEntry,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueMoveError {
+    EntryNotFound,
+    TargetNotFound,
 }
 
 fn new_entry_id() -> String {
@@ -462,6 +493,48 @@ mod tests {
         let selected = queue.select_entry(&intended).unwrap();
         assert_eq!(selected.entry_id, intended);
         assert_eq!(queue.current_index, Some(1));
+    }
+
+    #[test]
+    fn move_duplicate_occurrences_preserves_active_identity_and_source() {
+        let mut queue = queue();
+        let first = queue.items[0].entry_id.clone();
+        let active = queue.current().unwrap().entry_id;
+        let last = queue.items[2].entry_id.clone();
+        let source = queue.source.clone();
+        let revision = queue.revision;
+        assert_eq!(queue.move_entry(&first, None), Ok(true));
+        assert_eq!(queue.current_index, Some(0));
+        assert_eq!(queue.current().unwrap().entry_id, active);
+        assert_eq!(queue.items[2].entry_id, first);
+        assert_eq!(queue.source, source);
+        assert_eq!(queue.revision, revision + 1);
+        assert_eq!(queue.move_entry(&active, None), Ok(true));
+        assert_eq!(queue.current_index, Some(2));
+        assert_eq!(queue.current().unwrap().entry_id, active);
+        assert_eq!(queue.move_entry(&active, Some(&last)), Ok(true));
+        assert_eq!(queue.current_index, Some(0));
+        assert_eq!(queue.current().unwrap().entry_id, active);
+        assert_eq!(queue.items[1].entry_id, last);
+    }
+
+    #[test]
+    fn move_no_ops_and_stale_ids_never_mutate_queue() {
+        let mut queue = queue();
+        let first = queue.items[0].entry_id.clone();
+        let second = queue.items[1].entry_id.clone();
+        let last = queue.items[2].entry_id.clone();
+        let original = queue.clone();
+        assert_eq!(queue.move_entry(&first, Some(&first)), Ok(false));
+        assert_eq!(queue.move_entry(&first, Some(&second)), Ok(false));
+        assert_eq!(queue.move_entry(&last, None), Ok(false));
+        assert_eq!(queue.move_entry("stale", Some(&first)), Err(QueueMoveError::EntryNotFound));
+        assert_eq!(queue.move_entry(&first, Some("stale")), Err(QueueMoveError::TargetNotFound));
+        assert_eq!(queue, original);
+        queue.replace(vec![item("same"), item("new")], 0, source());
+        let replaced = queue.clone();
+        assert_eq!(queue.move_entry(&first, None), Err(QueueMoveError::EntryNotFound));
+        assert_eq!(queue, replaced);
     }
 
     #[test]

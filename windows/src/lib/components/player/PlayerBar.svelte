@@ -198,7 +198,6 @@
           <PlayerIcon name="queue" />
         </button>
       {/if}
-      <button type="button" class="panel-shortcut" disabled aria-label="Selección de salida de audio no disponible todavía" title="Dispositivos de salida: todavía no disponibles en Windows"><PlayerIcon name="output" size={18} /></button>
       <div class="volume" bind:this={volumeRoot}>
         <button bind:this={volumeButton} type="button" class="volume-toggle" aria-label="Mostrar volumen" title={`Volumen: ${Math.round(volume)}%`} aria-expanded={volumeOpen} aria-controls="player-volume" onclick={toggleVolume}>
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>

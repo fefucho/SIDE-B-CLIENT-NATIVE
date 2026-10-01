@@ -1,12 +1,27 @@
 <script lang="ts">
   import PlayerIcon from "../player/PlayerIcon.svelte";
-  import type { PlaybackStateDto, QueueEntryDto } from "$lib/types";
+  import type { PlaybackStateDto, QueueEntryDto, SongDto, BrowseCardDto } from "$lib/types";
   import ArtistCredits from "$lib/components/ArtistCredits.svelte";
+  import QueuePanel from './QueuePanel.svelte';
+  import LyricsPanel from './LyricsPanel.svelte';
+  import RecommendedPanel from './RecommendedPanel.svelte';
+  import type { LyricsState } from '$lib/player/lyrics';
+  import type { RecommendationsSnapshot } from '$lib/player/recommendations';
 
   type Panel = "queue" | "lyrics" | "related";
   interface Props {
     playback: PlaybackStateDto;
     onSelectQueue: (index: number) => void;
+    onMoveQueue: (entryId: string, beforeEntryId: string | null) => Promise<void>;
+    lyricsState: LyricsState;
+    recommendationsState: RecommendationsSnapshot;
+    onSeek: (seconds: number) => void;
+    onRetryLyrics: () => void;
+    onRefreshRecommendations: () => void;
+    onPlayRecommendation: (song: SongDto) => void;
+    onEnqueueRecommendation: (song: SongDto) => void;
+    onSongContextMenu: (event: MouseEvent, song: SongDto) => void;
+    onArtistContextMenu: (event: MouseEvent, artist: BrowseCardDto) => void;
     onClose: () => void;
     selectedPanel?: Panel;
     onSelectPanel?: (panel: Panel) => void;
@@ -25,20 +40,14 @@
     playback, onSelectQueue, onClose, selectedPanel, onSelectPanel, onOpenArtist, onOpenAlbum,
     onOpenMenu, onQueueContextMenu, loggedIn = false, liked = false, likePending = false,
     onToggleLike, onRetryRadio,
+    onMoveQueue, lyricsState, recommendationsState, onSeek, onRetryLyrics,
+    onRefreshRecommendations, onPlayRecommendation, onEnqueueRecommendation,
+    onSongContextMenu, onArtistContextMenu,
   }: Props = $props();
   let localPanel = $state<Panel>("queue");
   let failedArtworkUrl = $state<string | null>(null);
   const panel = $derived(selectedPanel ?? localPanel);
   const currentTrack = $derived(playback.currentTrack);
-  const queueTitle = $derived(playback.queue.source?.kind === 'radio'
-    ? `Radio de ${playback.queue.source.title || currentTrack?.title || 'esta canción'}`
-    : playback.queue.source?.title || 'Cola de reproducción');
-
-  function formatDuration(seconds: number | null) {
-    if (seconds === null || !Number.isFinite(seconds) || seconds <= 0) return '';
-    const total = Math.floor(seconds);
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-  }
 
   const panels: { id: Panel; label: string }[] = [
     { id: "queue", label: "Cola" },
@@ -49,11 +58,6 @@
   function selectPanel(value: Panel) {
     localPanel = value;
     onSelectPanel?.(value);
-  }
-  function handleContextMenu(event: MouseEvent, entry: QueueEntryDto) {
-    if (!onQueueContextMenu) return;
-    event.preventDefault();
-    onQueueContextMenu(event, entry);
   }
 </script>
 
@@ -108,34 +112,13 @@
 
       <div id="fullscreen-panel" class="panel" role="tabpanel" aria-labelledby={`fullscreen-tab-${panel}`}>
         {#if panel === "queue"}
-          <div class="queue-content">
-            <header class="queue-heading">
-              <div class="queue-context"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><span>{queueTitle}</span><span class="separator" aria-hidden="true">·</span><span class="count">{playback.queue.items.length} canciones</span></div>
-              {#if playback.queue.radio?.loading}<span class="radio-state" role="status"><span class="spinner" aria-hidden="true"></span>Preparando radio…</span>
-              {:else if playback.queue.radio?.error}<div class="radio-error" role="alert"><span>{playback.queue.radio.error}</span>{#if playback.queue.radio.canRetry && onRetryRadio}<button type="button" onclick={onRetryRadio}>Reintentar</button>{/if}</div>{/if}
-            </header>
-            {#if playback.queue.items.length}
-              <div class="queue-list" aria-label="Pistas en cola">
-                {#each playback.queue.items as entry, index (entry.entryId)}
-                  <div class="queue-row" role="group" aria-label={`Opciones de ${entry.title}`} class:current={index === playback.queue.currentIndex} oncontextmenu={(event) => handleContextMenu(event, entry)}>
-                    <button type="button" class="queue-select" aria-current={index === playback.queue.currentIndex ? "true" : undefined} aria-label={`Reproducir ${entry.title}`} onclick={() => onSelectQueue(index)}>
-                      <span class="queue-index">{#if index === playback.queue.currentIndex}<svg viewBox="0 0 24 24" aria-label={playback.isPlaying ? 'Sonando' : 'Pausado'} fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>{:else}{index + 1}{/if}</span>
-                      <span class="queue-art">{#if entry.thumbnail}<img src={entry.thumbnail} alt="" loading="lazy" />{:else}<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M10 5v12.1a4 4 0 1 1-2-3.46V3l12-2v14.1a4 4 0 1 1-2-3.46V4.4z" /></svg>{/if}</span>
-                      <span class="queue-meta"><span class="queue-title">{entry.title}</span><ArtistCredits artistRuns={entry.artistRuns} artists={entry.artists} album={entry.album} /></span>
-                      <span class="queue-duration">{formatDuration(entry.duration)}</span>
-                    </button>
-                    {#if onQueueContextMenu}<button type="button" class="row-menu" aria-label={`Más opciones para ${entry.title}`} title="Más opciones" onclick={(event) => onQueueContextMenu?.(event, entry)}><svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>{/if}
-                  </div>
-                {/each}
-              </div>
-            {:else}
-              <div class="empty-panel"><svg class="empty-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg><p>No hay pistas en la cola</p></div>
-            {/if}
-          </div>
+          <QueuePanel {playback} {onSelectQueue} {onMoveQueue} {onQueueContextMenu} {onRetryRadio} />
         {:else if panel === "lyrics"}
-          <div class="empty-panel"><svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 11h12M5 16h8M5 20h5" /></svg><p>Las letras todavía no están disponibles en Windows.</p></div>
+          <LyricsPanel state={lyricsState} position={playback.position} duration={playback.duration} {onSeek} onRetry={onRetryLyrics} />
         {:else}
-          <div class="empty-panel"><svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 7h11M4 12h11M4 17h11M18 5v11m-2-2 2 2 2-2" /></svg><p>Las recomendaciones todavía no están disponibles en Windows.</p></div>
+          <RecommendedPanel snapshot={recommendationsState} {currentTrack} isPlaying={playback.isPlaying}
+            onRefresh={onRefreshRecommendations} onPlaySong={onPlayRecommendation} onPlayNext={onEnqueueRecommendation}
+            {onOpenArtist} {onOpenAlbum} {onSongContextMenu} {onArtistContextMenu} />
         {/if}
       </div>
     </div>
@@ -186,13 +169,6 @@
   .tablist { box-sizing: border-box; display: flex; flex: 0 0 40px; height: 40px; align-items: center; gap: 0; max-width: 100%; padding: 4px; border-radius: 999px; background: #343437; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%); }
   .tablist button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 8px 16px; border: 0; border-radius: 999px; color: rgb(255 255 255 / 65%); background: transparent; font: inherit; font-size: 13px; font-weight: 500; line-height: 16px; white-space: nowrap; cursor: pointer; }.tablist button.active { color: #fff; background: #a33d45; font-weight: 650; }.tablist button:hover:not(.active) { color: #fff; }
   .panel { box-sizing: border-box; display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
-  .queue-content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }.queue-heading { display: flex; flex: none; min-width: 0; flex-direction: column; gap: 8px; padding: 2px 8px 8px; }.queue-context { display: flex; min-width: 0; align-items: center; gap: 8px; color: rgb(255 255 255 / 90%); font-size: 12px; font-weight: 650; }.queue-context svg { flex: 0 0 14px; width: 14px; height: 14px; }.queue-context > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.count { flex: none; color: rgb(255 255 255 / 53%); font-size: 11px; font-weight: 500; white-space: nowrap; }
-  .radio-state, .radio-error { display: flex; align-items: center; gap: 8px; color: rgb(255 255 255 / 67%); font-size: 11px; }.radio-error { color: #ffb7bb; }.radio-error button { flex: none; padding: 3px 8px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 999px; color: #fff; background: rgb(255 255 255 / 8%); font: inherit; cursor: pointer; }.spinner { width: 12px; height: 12px; border: 2px solid rgb(255 255 255 / 24%); border-top-color: #d06c70; border-radius: 50%; animation: spin .8s linear infinite; }@keyframes spin { to { transform: rotate(360deg); } }
-  .queue-list { min-width: 0; min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: rgb(255 255 255 / 28%) transparent; scrollbar-width: thin; }
-  .queue-row { display: flex; min-width: 0; align-items: center; gap: 6px; margin-bottom: 2px; padding: 0 4px; border-radius: 8px; }.queue-row:hover, .queue-row.current { background: rgb(255 255 255 / 7%); }.queue-select { box-sizing: border-box; display: flex; min-width: 0; flex: 1; height: 46px; align-items: center; gap: 6px; padding: 3px 2px; border: 0; border-radius: 7px; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }.queue-art { display: grid; flex: 0 0 36px; margin-right: 9px; place-items: center; width: 36px; height: 36px; overflow: hidden; border-radius: 6px; color: rgb(255 255 255 / 58%); background: rgb(255 255 255 / 10%); }.queue-art img { width: 100%; height: 100%; object-fit: cover; }.queue-art svg { width: 19px; height: 19px; }.queue-meta { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }.queue-title { display: block; min-width: 0; overflow: hidden; padding: 0; border: 0; color: rgb(255 255 255 / 92%); background: transparent; font: inherit; font-size: 13px; font-weight: 500; line-height: 16px; text-align: left; text-overflow: ellipsis; white-space: nowrap; }.current .queue-title { font-weight: 650; }.queue-meta :global(.artist-credits) { color: rgb(255 255 255 / 60%); font-size: 11.5px; line-height: 14px; }
-  .queue-index { display: grid; flex: 0 0 22px; place-items: center; color: rgb(255 255 255 / 55%); font-size: 11.5px; }.queue-index svg { width: 12px; height: 12px; color: white; }.queue-duration { flex: 0 0 36px; color: rgb(255 255 255 / 45%); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
-  .row-menu { display: grid; flex: 0 0 30px; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 6px; color: rgb(255 255 255 / 60%); background: transparent; cursor: pointer; }.row-menu svg { width: 16px; height: 16px; }.row-menu:hover { color: #fff; background: rgb(255 255 255 / 10%); }
-  .empty-panel { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 20px; color: rgb(255 255 255 / 55%); text-align: center; }.empty-panel p { max-width: 32ch; margin: 0; font-size: 14px; }.empty-icon { width: 36px; height: 36px; color: rgb(255 255 255 / 28%); }
   button:focus-visible { outline: 2px solid #d06c70; outline-offset: 3px; }
-  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+
 </style>
