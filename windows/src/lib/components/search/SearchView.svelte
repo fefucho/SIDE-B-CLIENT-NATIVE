@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AlbumCardDto, BrowseCardDto, SongDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import type { SearchData, SearchMode } from "$lib/search/controller";
   import { createMenuHandlers } from "$lib/menu/hooks";
 
@@ -14,12 +15,16 @@
     onQuickSearch: (query: string) => void;
     onPlaySong: (song: SongDto) => void;
     onOpenAlbum: (album: AlbumCardDto) => void;
+    onOpenArtist?: (id: string) => void;
   }
 
-  let { data, backendReady, currentTrackId, isPlaying, onSubmit, onQueryChange, onModeChange, onQuickSearch, onPlaySong, onOpenAlbum }: Props = $props();
+  let { data, backendReady, currentTrackId, isPlaying, onSubmit, onQueryChange, onModeChange, onQuickSearch, onPlaySong, onOpenAlbum, onOpenArtist }: Props = $props();
   const createMenu = createMenuHandlers();
   function submit(event: SubmitEvent) { event.preventDefault(); onSubmit(data.query, data.mode); }
   function play(song: SongDto) { onPlaySong(song); }
+  function openSongAlbum(song: SongDto, id: string) {
+    onOpenAlbum({ id, title: song.album ?? '', subtitle: song.artists, thumbnail: song.thumbnail });
+  }
 </script>
 
 <div class="search-view-container" data-primary-search>
@@ -70,9 +75,9 @@
         <div class="song-list">
           {#each data.songs as song (song.videoId)}
             {@const menu = createMenu(() => ({ kind: 'song', song }), { view: 'search_results' })}
-            <div class="song-row" class:is-active-track={currentTrackId === song.videoId} role="button" tabindex="0" onclick={() => play(song)} onkeydown={(event) => { menu.onKeyDown(event); if (event.key === "Enter" || event.key === " ") { event.preventDefault(); play(song); } }} oncontextmenu={menu.onContextMenu} title="Reproducir canción">
-              <div class="thumb-container">{#if song.thumbnail}<img src={song.thumbnail} alt={song.title} class="thumb-img" loading="lazy" />{:else}<div class="thumb-fallback">&#9835;</div>{/if}</div>
-              <div class="meta-col"><span class="song-title" title={song.title}>{song.title}</span><span class="song-artist" title={song.artists}>{song.artists}</span>{#if song.album}<span class="song-album" title={song.album}>• {song.album}</span>{/if}</div>
+            <div class="song-row" class:is-active-track={currentTrackId === song.videoId} role="group" aria-label={`Canción: ${song.title}`} oncontextmenu={menu.onContextMenu}>
+              <button type="button" class="thumb-container song-play" onclick={() => play(song)} onkeydown={menu.onKeyDown} aria-label={`Reproducir ${song.title}`} title="Reproducir canción">{#if song.thumbnail}<img src={song.thumbnail} alt="" class="thumb-img" loading="lazy" />{:else}<span class="thumb-fallback">&#9835;</span>{/if}</button>
+              <div class="meta-col"><button type="button" class="song-title song-play" title={song.title} onclick={() => play(song)} onkeydown={menu.onKeyDown}>{song.title}</button><div class="song-credits"><ArtistCredits artistRuns={song.artistRuns} artists={song.artists} artistId={song.artistId} onOpenArtist={onOpenArtist} album={song.album} albumId={song.albumId} onOpenAlbum={(id) => openSongAlbum(song, id)} /></div></div>
               <div class="extra-col">{#if currentTrackId === song.videoId && isPlaying}<span class="tag-playing">&#9658; SONANDO</span>{/if}{#if song.isVideo}<span class="tag-video">VIDEO</span>{/if}{#if song.duration}<span class="song-duration">{song.duration}</span>{/if}</div>
             </div>
           {/each}
@@ -397,6 +402,10 @@
     background: #1b1b1e;
   }
 
+  .song-play { padding: 0; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .song-play:focus-visible { outline: 2px solid var(--sideb-highlight, #d06c70); outline-offset: 2px; border-radius: 6px; }
+  button.thumb-container { display: block; }
+
   .thumb-img {
     width: 100%;
     height: 100%;
@@ -423,6 +432,11 @@
   }
 
   .song-title {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
     font-weight: 600;
     color: #ffffff;
     font-size: 0.95rem;
@@ -431,21 +445,9 @@
     text-overflow: ellipsis;
   }
 
-  .song-artist {
-    color: #9ca3af;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .song-album {
-    color: #6b7280;
-    font-size: 0.8rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  .song-credits { min-width: 0; overflow: hidden; color: #9ca3af; font-size: 0.85rem; line-height: 1.2; white-space: nowrap; }
+  .song-credits :global(.artist-credits) { display: flex; }
+  .song-credits :global(.credit-link:hover) { color: #fff; }
 
   .extra-col {
     display: flex;
@@ -557,4 +559,5 @@
   @media (max-width: 640px) {
     .album-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
   }
+
 </style>

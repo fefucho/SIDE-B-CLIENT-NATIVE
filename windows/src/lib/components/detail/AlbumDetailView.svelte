@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AlbumDetailDto, BrowseCardDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import DetailHeader from "./DetailHeader.svelte";
   import TrackTable from "./TrackTable.svelte";
   import DescriptionModal from "./DescriptionModal.svelte";
@@ -72,20 +73,26 @@
                     {@const canNavigate = canOpenCard(card)}
                     {@const imageKey = `${card.kind}-${card.id}-${cardIndex}`}
                     {@const menu = createMenu(() => targetFromCard(card), { view: 'album_detail', currentId: album.browseId })}
-                    <article class="card">
+                    <article class="card" role="group" aria-label={card.title} oncontextmenu={menu.onContextMenu}>
                       {#if canNavigate}
-                        <button type="button" class="card-main" aria-label={`${card.kind === "artist" ? "Ver artista" : "Abrir álbum"}: ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => openCard(card)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
+                        <button type="button" class="card-main" aria-label={`${card.kind === "artist" ? "Ver artista" : "Abrir álbum"}: ${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} onclick={() => openCard(card)} onkeydown={menu.onKeyDown}>
                           {#if card.thumbnail && !failedCardImages.has(imageKey)}<img class:artist-art={card.kind === "artist"} src={card.thumbnail} alt="" loading="lazy" onerror={() => failedCardImages = new Set(failedCardImages).add(imageKey)} />{:else}<div class="card-placeholder" class:artist-art={card.kind === "artist"} aria-hidden="true">♫</div>{/if}
                           <span class="card-title">{card.title}</span>
-                          {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
                         </button>
                       {:else}
-                        <div class="card-main informational" role="group" aria-label={`${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`} oncontextmenu={menu.onContextMenu}>
+                        <div class="card-main informational" role="group" aria-label={`${card.title}${card.subtitle ? `, ${card.subtitle}` : ""}`}>
                           {#if card.thumbnail && !failedCardImages.has(imageKey)}<img src={card.thumbnail} alt="" loading="lazy" onerror={() => failedCardImages = new Set(failedCardImages).add(imageKey)} />{:else}<div class="card-placeholder" aria-hidden="true">♫</div>{/if}
                           <span class="card-title">{card.title}</span>
-                          {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
                         </div>
                       {/if}
+                      {#if card.kind === 'artist'}
+                        {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
+                      {:else if card.kind === 'album'}
+                        {#if card.artistRuns?.length || card.artists?.trim()}<div class="card-credits"><ArtistCredits artistRuns={card.artistRuns} artists={card.artists} artistId={card.artistId} {onOpenArtist} wrap /></div>
+                        {:else if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
+                      {:else if ['song', 'video'].includes(card.kind) && (card.artistRuns?.length || card.artists?.trim())}
+                        <div class="card-credits"><ArtistCredits artistRuns={card.artistRuns} artists={card.artists} artistId={card.artistId} {onOpenArtist} album={card.album} albumId={card.albumId} {onOpenAlbum} wrap /></div>
+                      {:else if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
                     </article>
                   {/each}
                 </div>
@@ -126,14 +133,16 @@
   .shelf-heading h2 { margin: 0; font-size: 20px; font-weight: 700; }
   .see-more { border: 0; color: #b9b9c0; background: transparent; font: inherit; font-size: 12px; cursor: pointer; } .see-more:hover { color: white; }
   .cards { display: flex; gap: 16px; overflow-x: auto; padding: 10px 32px 16px; scrollbar-color: #ffffff2a transparent; }
-  .card { width: 160px; flex: 0 0 160px; }
+  .card { display: flex; width: 160px; min-width: 0; flex: 0 0 160px; flex-direction: column; align-items: flex-start; gap: 5px; }
   .card-main { display: flex; width: 100%; flex-direction: column; align-items: flex-start; padding: 0; border: 0; border-radius: 8px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
   .card-main:hover { background: var(--sideb-surface-hover); }
+  .card-main:hover img, .card-main:hover .card-placeholder { filter: brightness(1.08); }
   .card-main img, .card-placeholder { box-sizing: border-box; width: 160px; height: 160px; object-fit: cover; border-radius: 12px; background: #303036; }
   .card-main img.artist-art, .card-placeholder.artist-art { border-radius: 50%; }
   .card-placeholder { display: grid; place-items: center; color: #c8c8ce; font-size: 42px; }
   .card-title { display: -webkit-box; overflow: hidden; margin-top: 9px; color: #f1f1f3; font-size: 14px; font-weight: 600; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   .card-subtitle { overflow: hidden; margin-top: 3px; color: #aaaab1; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .card-credits { min-width: 0; max-width: 100%; color: #aaaab1; font-size: 12px; line-height: 16px; }
   .bottom-space { height: 120px; }
   button:focus-visible { outline: 2px solid var(--sideb-highlight); outline-offset: 3px; }
   @media (max-width: 680px) { .skeleton { gap: 16px; padding: 16px 18px; } .sk-art { width: 128px; height: 128px; } .shelf-heading { padding: 0 18px; } .cards { padding-right: 18px; padding-left: 18px; } }

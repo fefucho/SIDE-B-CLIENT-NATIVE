@@ -4,7 +4,7 @@ export type PlayerRpc = <T>(command: string, args?: Record<string, unknown>) => 
 export type PlayerUnlisten = () => void | Promise<void>;
 export type PlayerListen = <T>(event: string, handler: (event: { payload: T }) => void) => Promise<PlayerUnlisten>;
 export type PlaybackSnapshot = { state: PlaybackStateDto; error: string | null };
-export type PlayerSong = Pick<SongDto, 'videoId' | 'title' | 'artists' | 'thumbnail' | 'duration'> & Partial<Pick<SongDto, 'artistId' | 'albumId' | 'album'>> | PlaybackTrackDto | QueueEntryDto;
+export type PlayerSong = Pick<SongDto, 'videoId' | 'title' | 'artists' | 'thumbnail' | 'duration'> & Partial<Pick<SongDto, 'artistId' | 'albumId' | 'album' | 'artistRuns'>> | PlaybackTrackDto | QueueEntryDto;
 export type PlaybackQueueSource = { kind: string; id: string | null; title: string | null };
 export interface PlaySongOptions {
   queueItems?: PlayerSong[];
@@ -32,9 +32,9 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 function cloneState(state: PlaybackStateDto): PlaybackStateDto {
-  return { ...state, currentTrack: state.currentTrack ? { ...state.currentTrack } : null,
+  return { ...state, currentTrack: state.currentTrack ? { ...state.currentTrack, artistRuns: state.currentTrack.artistRuns?.map(run => ({ ...run })) ?? [] } : null,
     queue: { ...state.queue, radio: state.queue.radio ? { ...state.queue.radio } : null, source: state.queue.source ? { ...state.queue.source } : null,
-      items: state.queue.items.map((item) => ({ ...item })) } };
+      items: state.queue.items.map((item) => ({ ...item, artistRuns: item.artistRuns?.map(run => ({ ...run })) ?? [] })) } };
 }
 function songDuration(song: PlayerSong): number | null {
   const duration = song.duration;
@@ -44,7 +44,8 @@ function entryFor(song: PlayerSong, index: number): QueueEntryDto {
   const withEntry = song as Partial<QueueEntryDto>;
   return { entryId: withEntry.entryId || createEntryId(index), videoId: song.videoId, title: song.title,
     artists: song.artists, thumbnail: song.thumbnail, duration: songDuration(song),
-    artistId: song.artistId ?? null, albumId: song.albumId ?? null, album: song.album ?? null };
+    artistId: song.artistId ?? null, albumId: song.albumId ?? null, album: song.album ?? null,
+    artistRuns: song.artistRuns?.map(run => ({ ...run })) ?? [] };
 }
 let localEntrySequence = 0;
 function createEntryId(index: number): string {
@@ -91,7 +92,11 @@ export class PlaybackController {
     if (this.eventRevision !== eventRevision && next.generation <= this.state.generation) {
       // A progress event can be newer than a queue RPC while the queue revision is newer than our list.
       if (next.generation === this.state.generation && next.queue.revision > this.state.queue.revision) {
-        this.state = { ...this.state, queue: cloneState(next).queue }; this.emit(); return true;
+        const normalized = cloneState(next);
+        this.state = { ...this.state, queue: normalized.queue,
+          currentTrack: normalized.currentTrack && normalized.currentTrack.videoId === this.state.currentTrack?.videoId
+            ? normalized.currentTrack : this.state.currentTrack };
+        this.emit(); return true;
       }
       return false;
     }
@@ -162,6 +167,8 @@ export class PlaybackController {
     try {
       const state = await this.rpc<PlaybackStateDto>('play_song', {
         videoId: song.videoId.trim(), title: song.title || null, artists: song.artists || null,
+        artistId: song.artistId ?? null, artistRuns: song.artistRuns?.map(run => ({ ...run })) ?? [],
+        albumId: song.albumId ?? null, album: song.album ?? null,
         thumbnail: song.thumbnail ?? null, queueItems: entries,
         queueCurrentIndex: queueIndex, queueSource: entries ? options.queueSource ?? {
           kind: 'song', id: song.videoId.trim(), title: song.title || null,

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { HomeItemDto } from '$lib/types';
+  import ArtistCredits from '$lib/components/ArtistCredits.svelte';
   import { createMenuHandlers, targetFromHome } from '$lib/menu/hooks';
 
   export let item: HomeItemDto;
@@ -19,14 +20,7 @@
   $: fallbackArtist = item.artists || (['song', 'canción', 'video', 'vídeo'].includes(firstSubtitle)
     ? subtitleParts.slice(1).join(' • ')
     : subtitleParts[0] ?? '');
-  $: metadataText = item.album || fallbackArtist;
-  $: metadataKind = item.album ? 'album' : 'artist';
-  $: metadataId = metadataKind === 'album' ? item.albumId : item.artistId;
-  $: metadataAction = metadataKind === 'album' && metadataId && onOpenAlbum
-    ? () => onOpenAlbum?.(metadataId)
-    : metadataKind === 'artist' && metadataId && onOpenArtist
-      ? () => onOpenArtist?.(metadataId)
-      : undefined;
+  $: artistText = item.artists || fallbackArtist;
 </script>
 
 <article class="compact" aria-label={`Canción: ${item.title}`} oncontextmenu={menu.onContextMenu}>
@@ -45,11 +39,7 @@
       <span class="title-line"><span class="title">{item.title}</span>{#if item.explicit}<span class="explicit" title="Contenido explícito" aria-label="Explícito">E</span>{/if}</span>
     </div>
   {/if}
-  {#if metadataAction}
-    <button class="metadata metadata-link" type="button" onclick={metadataAction} aria-label={`Abrir ${metadataKind}: ${metadataText}`}>{metadataText}</button>
-  {:else}
-    <span class="metadata">{metadataText}</span>
-  {/if}
+  <span class="metadata"><ArtistCredits artistRuns={item.artistRuns} artists={artistText} artistId={item.artistId} onOpenArtist={onOpenArtist} album={item.album} albumId={item.albumId} onOpenAlbum={onOpenAlbum} /></span>
 </article>
 
 <style>
@@ -64,9 +54,7 @@
   .title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; line-height:23px; font-weight:600; }
   .explicit { flex:none; padding:0 3px; border-radius:2px; background:rgba(255,255,255,.12); color:rgba(255,255,255,.8); font-size:9px; line-height:12px; font-weight:700; }
   .metadata { position:absolute; z-index:1; left:58px; right:8px; bottom:5px; width:max-content; max-width:calc(100% - 66px); overflow:hidden; margin:0; color:rgba(255,255,255,.62); font-size:12px; line-height:17px; text-overflow:ellipsis; white-space:nowrap; }
-  button.metadata-link { padding:0; border:0; background:transparent; text-align:left; font:inherit; cursor:pointer; }
-  button.metadata-link:hover { color:#fff; text-decoration:underline; }
-  button.metadata-link:focus-visible { outline:2px solid var(--sideb-highlight,#D06C70); outline-offset:1px; border-radius:2px; }
+  .metadata :global(.artist-credits) { display:flex; width:100%; }
   @container home-content (width < 760px) { .compact { width:var(--home-compact-card-width-narrow,286px); } }
 </style>
 

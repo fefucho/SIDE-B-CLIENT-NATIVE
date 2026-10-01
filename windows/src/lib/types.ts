@@ -8,6 +8,7 @@ export interface SongDto {
   videoId: string;
   title: string;
   artists: string;
+  artistRuns?: HomeArtistRunDto[];
   album: string | null;
   duration: string | null;
   thumbnail: string | null;
@@ -29,6 +30,7 @@ export interface AlbumDetailDto {
   browseId: string;
   title: string;
   artist: string | null;
+  artistRuns?: HomeArtistRunDto[];
   subtitle: string | null;
   secondSubtitle: string | null;
   description: string | null;
@@ -75,7 +77,7 @@ export interface HomePageDto {
 }
 
 export interface HomeArtistRunDto { text: string; id: string | null }
-export interface BrowseCardDto { kind: string; id: string; title: string; subtitle: string | null; thumbnail: string | null; duration: string | null }
+export interface BrowseCardDto { kind: string; id: string; title: string; subtitle: string | null; thumbnail: string | null; duration: string | null; artistRuns?: HomeArtistRunDto[]; artists?: string | null; artistId?: string | null; album?: string | null; albumId?: string | null }
 export interface ArtistCarouselDto { title: string; items: BrowseCardDto[]; moreBrowseId: string | null; moreParams: string | null }
 export interface ArtistDetailDto {
   channelId: string; name: string; thumbnail: string | null; description: string | null;
@@ -120,6 +122,7 @@ export interface PlaybackTrackDto {
   videoId: string;
   title: string;
   artists: string;
+  artistRuns?: HomeArtistRunDto[];
   thumbnail: string | null;
   duration: number | null;
   artistId?: string | null;
@@ -145,6 +148,7 @@ export interface QueueEntryDto {
   videoId: string;
   title: string;
   artists: string;
+  artistRuns?: HomeArtistRunDto[];
   thumbnail: string | null;
   duration: number | null;
   artistId?: string | null;

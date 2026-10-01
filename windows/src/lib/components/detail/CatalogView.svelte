@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { BrowseCardDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import { createMenuHandlers } from "$lib/menu/hooks";
   import { targetFromCard } from "$lib/menu/types";
 
@@ -66,15 +67,26 @@
       <div class="grid">
         {#each items as item, index (`${item.kind}:${item.id}:${index}`)}
           {@const menu = createMenu(() => targetFromCard(item), { view: 'catalog' })}
-          {#if canActivate(item)}
-            <button class="card interactive" type="button" onclick={() => activate(item)} oncontextmenu={menu.onContextMenu} onkeydown={menu.onKeyDown}>
-              {@render cardContent(item)}
-            </button>
-          {:else}
-            <article class="card" role="group" aria-label={`${item.title}; acción no disponible`} oncontextmenu={menu.onContextMenu}>
-              {@render cardContent(item)}
-            </article>
-          {/if}
+          <article class="card" role="group" aria-label={item.title} oncontextmenu={menu.onContextMenu}>
+            {#if canActivate(item)}
+              <button class="card-main interactive" type="button" onclick={() => activate(item)} onkeydown={menu.onKeyDown} aria-label={`${item.title}${item.subtitle ? `, ${item.subtitle}` : ''}`}>
+                {@render cardContent(item)}
+              </button>
+            {:else}
+              <div class="card-main informational" role="group" aria-label={`${item.title}; acción no disponible`}>
+                {@render cardContent(item)}
+              </div>
+            {/if}
+            {#if item.kind === 'artist'}
+              {#if item.subtitle}<span class="subtitle">{item.subtitle}</span>{/if}
+            {:else if item.kind === 'album'}
+              {#if item.artistRuns?.length || item.artists?.trim()}
+                <div class="card-credits"><ArtistCredits artistRuns={item.artistRuns} artists={item.artists} artistId={item.artistId} onOpenArtist={onOpenArtist} wrap /></div>
+              {:else if item.subtitle}<span class="subtitle">{item.subtitle}</span>{/if}
+            {:else if ['song', 'video'].includes(item.kind) && (item.artistRuns?.length || item.artists?.trim())}
+              <div class="card-credits"><ArtistCredits artistRuns={item.artistRuns} artists={item.artists} artistId={item.artistId} onOpenArtist={onOpenArtist} album={item.album} albumId={item.albumId} onOpenAlbum={onOpenAlbum} wrap /></div>
+            {:else if item.subtitle}<span class="subtitle">{item.subtitle}</span>{/if}
+          </article>
         {/each}
       </div>
     {/if}
@@ -87,7 +99,6 @@
     {:else}<span class="art-fallback" class:round={item.kind === "artist"}>♪</span>{/if}
   </span>
   <span class="title">{item.title}</span>
-  {#if item.subtitle}<span class="subtitle">{item.subtitle}</span>{/if}
 {/snippet}
 
 <style>
@@ -97,14 +108,18 @@
   main { padding: 0 32px; }
   h1 { margin: 0 0 20px; font-size: 28px; line-height: 1.2; font-weight: 700; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); align-items: start; gap: 24px 18px; }
-  .card { display: flex; width: 100%; max-width: 190px; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
+  .card { display: flex; width: 100%; max-width: 190px; min-width: 0; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0; color: inherit; text-align: left; font: inherit; }
+  .card-main { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
   .interactive { cursor: pointer; }
+  .interactive:hover .artwork { filter: brightness(1.08); }
+  .informational { cursor: default; }
   .artwork { display: block; width: 100%; aspect-ratio: 1; overflow: hidden; border-radius: 10px; background: rgb(255 255 255 / 8%); }
   .artwork img, .art-fallback { display: grid; width: 100%; height: 100%; place-items: center; object-fit: cover; color: #aaa; font-size: 32px; }
   .artwork img.round, .art-fallback.round { border-radius: 50%; }
   .art-fallback { background: rgb(255 255 255 / 8%); }
   .title { max-width: 100%; display: -webkit-box; overflow: hidden; color: var(--text-primary, #f3f3f5); font-size: 13px; font-weight: 600; line-height: 18px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   .subtitle { max-width: 100%; overflow: hidden; color: var(--text-secondary, #aaaab0); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .card-credits { min-width: 0; max-width: 100%; color: var(--text-secondary, #aaaab0); font-size: 11px; line-height: 15px; }
   .state { display: flex; min-height: 200px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-secondary, #aaaab0); text-align: center; }
   .state h2 { margin: 0; color: var(--text-primary, #eee); font-size: 17px; }
   .state p { max-width: 640px; margin: 0; font-size: 13px; }

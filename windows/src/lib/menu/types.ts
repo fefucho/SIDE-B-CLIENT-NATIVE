@@ -26,17 +26,19 @@ export const MENU_CONTEXT = Symbol('sideb-menu');
 export function songFromHome(item: HomeItemDto): SongDto {
   return { videoId: item.id, title: item.title, artists: item.artists ?? item.subtitle ?? '',
     thumbnail: item.thumbnail, duration: item.duration, album: item.album, albumId: item.albumId,
-    artistId: item.artistId, isVideo: false };
+    artistId: item.artistId, artistRuns: item.artistRuns.map(run => ({ ...run })), isVideo: item.kind === 'video' };
 }
 export function songFromQueue(item: QueueEntryDto | Omit<QueueEntryDto, 'entryId'>): SongDto {
   return { videoId: item.videoId, title: item.title, artists: item.artists, thumbnail: item.thumbnail,
     duration: item.duration == null ? null : String(Math.floor(item.duration / 60)) + ':' + String(Math.floor(item.duration % 60)).padStart(2, '0'),
-    album: item.album ?? null, albumId: item.albumId ?? null, artistId: item.artistId ?? null, isVideo: false };
+    album: item.album ?? null, albumId: item.albumId ?? null, artistId: item.artistId ?? null,
+    artistRuns: item.artistRuns?.map(run => ({ ...run })) ?? [], isVideo: false };
 }
 export function targetFromCard(card: BrowseCardDto): MenuTarget | null {
   if (card.kind === 'song' || card.kind === 'video') return { kind: 'song', song: {
-    videoId: card.id, title: card.title, artists: card.subtitle ?? '', thumbnail: card.thumbnail,
-    duration: card.duration, album: null, albumId: null, artistId: null, isVideo: card.kind === 'video',
+    videoId: card.id, title: card.title, artists: card.artists ?? card.subtitle ?? '', thumbnail: card.thumbnail,
+    duration: card.duration, album: card.album ?? null, albumId: card.albumId ?? null, artistId: card.artistId ?? null,
+    artistRuns: card.artistRuns?.map(run => ({ ...run })) ?? [], isVideo: card.kind === 'video',
   } };
   if (card.kind === 'album' || card.kind === 'artist' || card.kind === 'playlist') return { kind: card.kind, card };
   if (card.id.startsWith('RD')) return { kind: 'playlist', card };

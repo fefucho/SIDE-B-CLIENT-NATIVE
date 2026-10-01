@@ -989,6 +989,22 @@ fn first_album_id(runs: &[Value]) -> Option<String> {
     })
 }
 
+/// Song cards keep the album label on its browse link, outside the artist-only subtitle.
+fn first_album_name(runs: &[Value]) -> Option<String> {
+    runs.iter().find_map(|run| {
+        let id = run
+            .get("navigationEndpoint")?
+            .get("browseEndpoint")?
+            .get("browseId")?
+            .as_str()?;
+        if !id.starts_with("MPRE") {
+            return None;
+        }
+        let text = run.get("text")?.as_str()?.trim();
+        (!text.is_empty()).then(|| text.to_owned())
+    })
+}
+
 /// A `musicTwoRowItemRenderer` → one card. Kind inferred from its navigation endpoint.
 fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
     let title = runs_text(node.get("title"))?;
@@ -1022,7 +1038,7 @@ fn parse_two_row_item(node: &Value) -> Option<BrowseItem> {
             explicit: is_explicit(node),
             artists: subtitle,
             artist_id: runs.and_then(|r| first_artist_id(r)),
-            album: None,
+            album: runs.and_then(|r| first_album_name(r)),
             album_id: runs.and_then(|r| first_album_id(r)),
         });
     }
@@ -1395,6 +1411,7 @@ mod tests {
         let song = &items(&root)[0];
         assert_eq!(song.subtitle.as_deref(), Some("Miley Cyrus"));
         assert_eq!(song.album_id.as_deref(), Some("MPREplastic"));
+        assert_eq!(song.album.as_deref(), Some("Plastic Hearts"));
         assert_eq!(song.artist_runs.iter().map(|run| (run.text.as_str(), run.id.as_deref())).collect::<Vec<_>>(), [("Miley Cyrus", Some("UCmiley"))]);
 
         // An album card is not a queue entry, so its subtitle stays whole.
@@ -1405,6 +1422,34 @@ mod tests {
         let card = &items(&root)[0];
         assert_eq!(card.kind, "album");
         assert_eq!(card.subtitle.as_deref(), Some("Album • Miley Cyrus"));
+    }
+
+    #[test]
+    fn listen_again_keeps_album_and_individual_artist_destinations() {
+        let item = parse_two_row_item(&json!({
+            "title": {"runs": [{"text": "Lose Yourself to Dance"}]},
+            "navigationEndpoint": {"watchEndpoint": {"videoId": "dance"}},
+            "subtitle": {"runs": [
+                {"text": "Daft Punk", "navigationEndpoint": {"browseEndpoint": {"browseId": "UCdaft"}}},
+                {"text": " & "},
+                {"text": "Pharrell Williams", "navigationEndpoint": {"browseEndpoint": {"browseId": "UCpharrell"}}},
+                {"text": " • "},
+                {"text": "Random Access Memories", "navigationEndpoint": {"browseEndpoint": {"browseId": "MPREram"}}},
+                {"text": " • "}, {"text": "2013"}
+            ]}
+        })).unwrap();
+        assert_eq!(item.album.as_deref(), Some("Random Access Memories"));
+        assert_eq!(item.album_id.as_deref(), Some("MPREram"));
+        assert_eq!(item.artist_runs.iter().filter(|run| run.id.is_some()).map(|run| (run.text.as_str(), run.id.as_deref())).collect::<Vec<_>>(),
+            [("Daft Punk", Some("UCdaft")), ("Pharrell Williams", Some("UCpharrell"))]);
+        assert_eq!(item.artists.as_deref(), Some("Daft Punk & Pharrell Williams"));
+        let legacy = parse_two_row_item(&json!({
+            "title": {"runs": [{"text": "Video"}]},
+            "navigationEndpoint": {"watchEndpoint": {"videoId": "video"}},
+            "subtitle": {"runs": [{"text": "Daft Punk"}, {"text": " • "}, {"text": "1.7B views"}]}
+        })).unwrap();
+        assert!(legacy.album.is_none());
+        assert!(legacy.album_id.is_none());
     }
 
     #[test]

@@ -38,6 +38,8 @@ Autenticación y almacenamiento sensible permanecen en el runtime. Los DTOs no i
 
 Actualizar el comando/DTO Rust y su tipo/consumidor TypeScript juntos. Si cambia un record del core, revisar también el consumidor UniFFI macOS. Agregar pruebas cuando haya una regla o regresión observable: identidad de cola, respuesta tardía, reset de cuenta, paginación, error recuperable. Una extracción mecánica no requiere duplicar pruebas por cada función.
 
+El bridge Tauri activa el feature optativo `sideb-core/windows-bridge` para conservar créditos de artistas y metadata de tarjetas en sus records. El contrato UniFFI de Apple se genera sin ese feature; sus campos permanecen iguales. Los DTOs Windows transportan `artistRuns` con nombre e identificador por artista desde el proveedor hasta la cola y el reproductor. La metadata que llega con una radio completa datos de pistas ya presentes conservando sus identificadores de ocurrencia y la carga de audio.
+
 ## Build
 
 `scripts/windows.ps1` resuelve el repositorio desde su propia ubicación, prepara MSVC 2022, fija la dependencia libmpv y ejecuta comandos iguales en local y CI. La build standalone incluye frontend compilado y DLL junto al ejecutable. `dev` usa Vite; un binario de `cargo build` directo con configuración debug puede seguir apuntando al servidor de desarrollo y no equivale a esa build standalone.

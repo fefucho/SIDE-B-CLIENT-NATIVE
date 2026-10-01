@@ -1,3 +1,4 @@
+use crate::HomeArtistRunDto;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -19,6 +20,8 @@ pub struct QueueEntryDto {
     pub album_id: Option<String>,
     #[serde(default)]
     pub album: Option<String>,
+    #[serde(default)]
+    pub artist_runs: Vec<HomeArtistRunDto>,
 }
 
 impl QueueEntryDto {
@@ -45,6 +48,31 @@ impl QueueEntryDto {
         album_id: Option<String>,
         album: Option<String>,
     ) -> Self {
+        Self::with_metadata_and_runs(
+            video_id,
+            title,
+            artists,
+            thumbnail,
+            duration,
+            artist_id,
+            album_id,
+            album,
+            Vec::new(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_metadata_and_runs(
+        video_id: String,
+        title: String,
+        artists: String,
+        thumbnail: Option<String>,
+        duration: Option<f64>,
+        artist_id: Option<String>,
+        album_id: Option<String>,
+        album: Option<String>,
+        artist_runs: Vec<HomeArtistRunDto>,
+    ) -> Self {
         Self {
             entry_id: format!("queue-{}", NEXT_ENTRY_ID.fetch_add(1, Ordering::Relaxed)),
             video_id,
@@ -55,7 +83,33 @@ impl QueueEntryDto {
             artist_id,
             album_id,
             album,
+            artist_runs,
         }
+    }
+
+    fn enrich_missing_metadata(&mut self, source: &Self) -> bool {
+        let mut changed = false;
+        if self.artists.trim().is_empty() && !source.artists.trim().is_empty() {
+            self.artists = source.artists.clone();
+            changed = true;
+        }
+        if self.artist_id.is_none() && source.artist_id.is_some() {
+            self.artist_id = source.artist_id.clone();
+            changed = true;
+        }
+        if self.album_id.is_none() && source.album_id.is_some() {
+            self.album_id = source.album_id.clone();
+            changed = true;
+        }
+        if self.album.is_none() && source.album.is_some() {
+            self.album = source.album.clone();
+            changed = true;
+        }
+        if self.artist_runs.is_empty() && !source.artist_runs.is_empty() {
+            self.artist_runs = source.artist_runs.clone();
+            changed = true;
+        }
+        changed
     }
 }
 
@@ -250,6 +304,16 @@ impl QueueStateDto {
             .iter()
             .map(|entry| entry.video_id.clone())
             .collect::<HashSet<_>>();
+        let mut metadata_changed = false;
+        for recommendation in &recommendations {
+            for existing in self
+                .items
+                .iter_mut()
+                .filter(|entry| entry.video_id == recommendation.video_id)
+            {
+                metadata_changed |= existing.enrich_missing_metadata(recommendation);
+            }
+        }
         let mut added = Vec::new();
         for entry in recommendations {
             if entry.video_id.trim().is_empty() || !known.insert(entry.video_id.clone()) {
@@ -270,6 +334,9 @@ impl QueueStateDto {
                 }
             }
             self.items.extend(added);
+            metadata_changed = true;
+        }
+        if metadata_changed {
             self.revision += 1;
         }
         cursor
@@ -428,6 +495,48 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn seed_duplicate_enriches_all_existing_occurrences_without_replacing_them() {
+        let mut queue = queue();
+        let original_ids = queue
+            .items
+            .iter()
+            .map(|entry| entry.entry_id.clone())
+            .collect::<Vec<_>>();
+        let original_revision = queue.revision;
+        let mut radio_seed = item("same");
+        radio_seed.artists = "Artist A & Artist B".into();
+        radio_seed.artist_id = Some("UCartistA".into());
+        radio_seed.album = Some("Album".into());
+        radio_seed.album_id = Some("MPREalbum".into());
+        radio_seed.artist_runs = vec![
+            HomeArtistRunDto {
+                text: "Artist A".into(),
+                id: Some("UCartistA".into()),
+            },
+            HomeArtistRunDto {
+                text: "Artist B".into(),
+                id: Some("UCartistB".into()),
+            },
+        ];
+
+        assert_eq!(queue.merge_radio(vec![radio_seed]), None);
+        assert_eq!(queue.revision, original_revision + 1);
+        assert_eq!(
+            queue
+                .items
+                .iter()
+                .map(|entry| entry.entry_id.clone())
+                .collect::<Vec<_>>(),
+            original_ids
+        );
+        assert_eq!(queue.current_index, Some(1));
+        for occurrence in queue.items.iter().filter(|entry| entry.video_id == "same") {
+            assert_eq!(occurrence.album.as_deref(), Some("Album"));
+            assert_eq!(occurrence.artist_runs.len(), 2);
+        }
     }
 
     #[test]

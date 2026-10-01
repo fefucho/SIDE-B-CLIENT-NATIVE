@@ -36,7 +36,7 @@ enum RadioFetch {
 }
 
 fn queue_entry_from_song(song: SongDto) -> QueueEntryDto {
-    QueueEntryDto::with_metadata(
+    QueueEntryDto::with_metadata_and_runs(
         song.video_id,
         song.title,
         song.artists,
@@ -45,11 +45,12 @@ fn queue_entry_from_song(song: SongDto) -> QueueEntryDto {
         song.artist_id,
         song.album_id,
         song.album,
+        song.artist_runs,
     )
 }
 
 fn queue_entry_from_record(song: sideb_core::SongItemRecord) -> QueueEntryDto {
-    QueueEntryDto::with_metadata(
+    QueueEntryDto::with_metadata_and_runs(
         song.video_id,
         song.title,
         song.artists,
@@ -58,6 +59,10 @@ fn queue_entry_from_record(song: sideb_core::SongItemRecord) -> QueueEntryDto {
         song.artist_id,
         song.album_id,
         song.album,
+        song.artist_runs
+            .into_iter()
+            .map(crate::HomeArtistRunDto::from)
+            .collect(),
     )
 }
 
@@ -184,6 +189,12 @@ async fn fetch_radio(
                         .map(queue_entry_from_record)
                         .collect::<Vec<_>>();
                     let cursor = playback.queue.merge_radio(recommendations);
+                    let current_entry = playback.queue.current();
+                    if let (Some(current_track), Some(current_entry)) =
+                        (playback.current_track.as_mut(), current_entry.as_ref())
+                    {
+                        current_track.enrich_missing_metadata(current_entry);
+                    }
                     if cursor.is_none() {
                         playback.radio_exhausted = true;
                         playback.queue.end_radio(None, false);
@@ -328,6 +339,7 @@ pub(crate) async fn play_song(
     artist_id: Option<String>,
     album_id: Option<String>,
     album: Option<String>,
+    artist_runs: Option<Vec<crate::HomeArtistRunDto>>,
     queue_entry_id: Option<String>,
 ) -> Result<PlaybackStateDto, CommandError> {
     let trimmed_id = video_id.trim();
@@ -423,7 +435,7 @@ pub(crate) async fn play_song(
                 CommandError::new("INVALID_QUEUE_INDEX", "La pista ya no está en la cola.")
             })?;
         } else if preserve_queue != Some(true) {
-            let entry = QueueEntryDto::with_metadata(
+            let entry = QueueEntryDto::with_metadata_and_runs(
                 trimmed_id.to_owned(),
                 title.clone().unwrap_or_else(|| "Canción".into()),
                 artists.clone().unwrap_or_default(),
@@ -432,6 +444,7 @@ pub(crate) async fn play_song(
                 artist_id.clone(),
                 album_id.clone(),
                 album.clone(),
+                artist_runs.unwrap_or_default(),
             );
             let _ = pb.queue.replace(
                 vec![entry],
@@ -487,6 +500,7 @@ pub(crate) async fn play_song(
             artist_id: active_entry.artist_id,
             album_id: active_entry.album_id,
             album: active_entry.album,
+            artist_runs: active_entry.artist_runs,
         });
         pb.eof_waiting = None;
         let dto = pb.to_dto();
@@ -596,6 +610,11 @@ pub(crate) async fn play_song(
         .current_track
         .as_ref()
         .and_then(|track| track.album.clone());
+    let artist_runs = pb
+        .current_track
+        .as_ref()
+        .map(|track| track.artist_runs.clone())
+        .unwrap_or_default();
     pb.current_track = Some(PlaybackTrackDto {
         video_id: trimmed_id.to_string(),
         title: resolved_title,
@@ -609,6 +628,7 @@ pub(crate) async fn play_song(
         artist_id,
         album_id,
         album,
+        artist_runs,
     });
     if parsed_duration > 0.0 {
         pb.duration = parsed_duration;
@@ -705,6 +725,7 @@ async fn start_queue_entry(
         entry.artist_id,
         entry.album_id,
         entry.album,
+        Some(entry.artist_runs),
         Some(entry.entry_id),
     )
     .await
@@ -744,6 +765,7 @@ pub(crate) async fn start_song_radio(
         entry.artist_id,
         entry.album_id,
         entry.album,
+        None,
         None,
     )
     .await

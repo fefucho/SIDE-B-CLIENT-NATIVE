@@ -58,6 +58,108 @@ pub struct PlaybackTrackDto {
     pub album_id: Option<String>,
     #[serde(default)]
     pub album: Option<String>,
+    #[serde(default)]
+    pub artist_runs: Vec<HomeArtistRunDto>,
+}
+
+impl PlaybackTrackDto {
+    pub(crate) fn enrich_missing_metadata(&mut self, entry: &crate::queue::QueueEntryDto) {
+        if self.video_id != entry.video_id {
+            return;
+        }
+        if self.artists.trim().is_empty() && !entry.artists.trim().is_empty() {
+            self.artists = entry.artists.clone();
+        }
+        if self.artist_id.is_none() {
+            self.artist_id = entry.artist_id.clone();
+        }
+        if self.album_id.is_none() {
+            self.album_id = entry.album_id.clone();
+        }
+        if self.album.is_none() {
+            self.album = entry.album.clone();
+        }
+        if self.artist_runs.is_empty() {
+            self.artist_runs = entry.artist_runs.clone();
+        }
+    }
+}
+
+#[cfg(test)]
+mod playback_track_tests {
+    use super::{HomeArtistRunDto, PlaybackTrackDto};
+    use crate::queue::QueueEntryDto;
+
+    #[test]
+    fn radio_metadata_enrichment_preserves_audio_identity_and_existing_credits() {
+        let mut track = PlaybackTrackDto {
+            video_id: "seed-video".into(),
+            title: "Seed title".into(),
+            artists: "Seed artist".into(),
+            thumbnail: None,
+            duration: Some(123.0),
+            artist_id: None,
+            album_id: None,
+            album: None,
+            artist_runs: Vec::new(),
+        };
+        let entry = QueueEntryDto::with_metadata_and_runs(
+            "seed-video".into(),
+            "Recommendation title".into(),
+            "Recommendation artist".into(),
+            Some("thumb".into()),
+            Some(456.0),
+            Some("UC-artist".into()),
+            Some("MPRE-album".into()),
+            Some("Album".into()),
+            vec![HomeArtistRunDto {
+                text: "Artist".into(),
+                id: Some("UC-artist".into()),
+            }],
+        );
+
+        track.enrich_missing_metadata(&entry);
+
+        assert_eq!(track.video_id, "seed-video");
+        assert_eq!(track.title, "Seed title");
+        assert_eq!(track.duration, Some(123.0));
+        assert_eq!(track.artists, "Seed artist");
+        assert_eq!(track.album.as_deref(), Some("Album"));
+        assert_eq!(track.album_id.as_deref(), Some("MPRE-album"));
+        assert_eq!(track.artist_id.as_deref(), Some("UC-artist"));
+        assert_eq!(track.artist_runs.len(), 1);
+    }
+
+    #[test]
+    fn radio_metadata_enrichment_ignores_a_different_current_song() {
+        let mut track = PlaybackTrackDto {
+            video_id: "currently-playing".into(),
+            title: "Title".into(),
+            artists: "Artist".into(),
+            thumbnail: None,
+            duration: None,
+            artist_id: None,
+            album_id: None,
+            album: None,
+            artist_runs: Vec::new(),
+        };
+        let entry = QueueEntryDto::with_metadata_and_runs(
+            "radio-seed".into(),
+            "Other".into(),
+            "Other".into(),
+            None,
+            None,
+            None,
+            None,
+            Some("Should not copy".into()),
+            Vec::new(),
+        );
+
+        track.enrich_missing_metadata(&entry);
+
+        assert_eq!(track.album, None);
+        assert!(track.artist_runs.is_empty());
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -97,6 +199,8 @@ pub struct SongDto {
     pub album_id: Option<String>,
     pub set_video_id: Option<String>,
     pub library: Option<LibraryToggleDto>,
+    #[serde(default)]
+    pub artist_runs: Vec<HomeArtistRunDto>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -125,6 +229,11 @@ impl From<sideb_core::SongItemRecord> for SongDto {
                 add_token: v.add_token,
                 remove_token: v.remove_token,
             }),
+            artist_runs: r
+                .artist_runs
+                .into_iter()
+                .map(HomeArtistRunDto::from)
+                .collect(),
         }
     }
 }
@@ -164,6 +273,8 @@ pub struct AlbumDetailDto {
     pub playlist_id: Option<String>,
     pub in_library: bool,
     pub sections: Vec<ArtistCarouselDto>,
+    #[serde(default)]
+    pub artist_runs: Vec<HomeArtistRunDto>,
 }
 
 impl From<sideb_core::AlbumDetailRecord> for AlbumDetailDto {
@@ -184,6 +295,11 @@ impl From<sideb_core::AlbumDetailRecord> for AlbumDetailDto {
                 .sections
                 .into_iter()
                 .map(ArtistCarouselDto::from)
+                .collect(),
+            artist_runs: r
+                .artist_runs
+                .into_iter()
+                .map(HomeArtistRunDto::from)
                 .collect(),
         }
     }
@@ -290,7 +406,7 @@ impl From<sideb_core::HomePageRecord> for HomePageDto {
     }
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HomeArtistRunDto {
     pub text: String,
@@ -314,6 +430,12 @@ pub struct BrowseCardDto {
     pub subtitle: Option<String>,
     pub thumbnail: Option<String>,
     pub duration: Option<String>,
+    pub artists: Option<String>,
+    pub artist_id: Option<String>,
+    pub album: Option<String>,
+    pub album_id: Option<String>,
+    #[serde(default)]
+    pub artist_runs: Vec<HomeArtistRunDto>,
 }
 impl From<sideb_core::BrowseCardRecord> for BrowseCardDto {
     fn from(r: sideb_core::BrowseCardRecord) -> Self {
@@ -324,6 +446,15 @@ impl From<sideb_core::BrowseCardRecord> for BrowseCardDto {
             subtitle: r.subtitle,
             thumbnail: r.thumbnail,
             duration: r.duration,
+            artists: r.artists,
+            artist_id: r.artist_id,
+            album: r.album,
+            album_id: r.album_id,
+            artist_runs: r
+                .artist_runs
+                .into_iter()
+                .map(HomeArtistRunDto::from)
+                .collect(),
         }
     }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AccountSongDto as SongDto } from "$lib/account/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import { createMenuHandlers } from "$lib/menu/hooks";
   import type { MenuOrigin } from "$lib/menu/types";
   type AccountTrackDto = SongDto;
@@ -65,10 +66,7 @@
             <div class="track-cell-content">
               {#if track.thumbnail && !failedImages.has(key)}<img class="cover" src={track.thumbnail} alt="" loading="lazy" onerror={() => markImageFailed(key)} />{:else}<div class="cover fallback" aria-hidden="true">♫</div>{/if}
               <div class="song-meta"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={(event) => handleTrackKeydown(event, track)} title={track.title}>{track.title}</button>
-                <div class="artist-line">
-                  {#if track.artistId && onOpenArtist}<button type="button" class="metadata-link" onclick={() => onOpenArtist!(track.artistId!)}>{track.artists}</button>
-                  {:else}<span>{track.artists}</span>{/if}
-                </div>
+                <div class="artist-line"><ArtistCredits artistRuns={track.artistRuns} artists={track.artists} artistId={track.artistId} {onOpenArtist} /></div>
               </div>
             </div>
           </td>
@@ -110,7 +108,6 @@
   .song-title, .metadata-link { display: block; max-width: 100%; overflow: hidden; padding: 0; border: 0; color: #f2f2f4; background: none; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   .song-title { font-size: 13px; font-weight: 550; }
   .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: #a6a6ad; white-space: nowrap; }
-  .artist-line span:first-child, .artist-line .metadata-link { overflow: hidden; text-overflow: ellipsis; }
   .metadata-link { display: inline; color: #aaaab1; font-size: 12px; }
   .metadata-link:hover { color: #fff; text-decoration: underline; }
   .album-heading, .album-cell { width: 22%; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

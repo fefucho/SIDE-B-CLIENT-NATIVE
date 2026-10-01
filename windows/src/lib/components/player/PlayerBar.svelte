@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import PlayerIcon from "./PlayerIcon.svelte";
   import type { PlaybackStateDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   type Panel = "queue" | "lyrics" | "related";
 
   interface Props {
@@ -172,11 +173,9 @@
           <span class="status" role="status">Cargando audio…</span>
         {:else}
           <div class="artist-line">
-            {#if playback.currentTrack?.artistId && onOpenArtist}<button type="button" class="metadata-link artist" onclick={() => onOpenArtist?.(playback.currentTrack!.artistId!)} title={playback.currentTrack.artists}>{playback.currentTrack.artists}</button>
-            {:else}<span class="artist" title={playback.currentTrack?.artists ?? ""}>{playback.currentTrack?.artists || "Seleccioná una canción"}</span>{/if}
-            {#if playback.currentTrack?.album}<span class="metadata-separator" aria-hidden="true">·</span>{/if}
-            {#if playback.currentTrack?.albumId && onOpenAlbum}<button type="button" class="metadata-link artist" onclick={() => onOpenAlbum?.(playback.currentTrack!.albumId!)} title={playback.currentTrack.album}>{playback.currentTrack.album}</button>
-            {:else if playback.currentTrack?.album}<span class="artist album" title={playback.currentTrack.album}>{playback.currentTrack.album}</span>{/if}
+            {#if playback.currentTrack}
+              <ArtistCredits artistRuns={playback.currentTrack.artistRuns} artists={playback.currentTrack.artists} artistId={playback.currentTrack.artistId} {onOpenArtist} album={playback.currentTrack.album} albumId={playback.currentTrack.albumId} {onOpenAlbum} />
+            {:else}<span class="artist">Seleccioná una canción</span>{/if}
           </div>
         {/if}
         {#if likeError}
@@ -389,11 +388,7 @@
   .title, .artist, .status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; line-height: 16px; }
   .artist, .status { color: #a4a4a8; font-size: 11.5px; font-weight: 500; line-height: 14px; }
-  .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
-  .metadata-link { min-width: 0; max-width: 60%; padding: 0; overflow: hidden; border: 0; color: #a4a4a8; background: transparent; font: inherit; font-size: 11.5px; font-weight: 500; line-height: 14px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-  .metadata-link:hover { color: #fff; text-decoration: underline; }
-  .metadata-separator { flex: none; color: #777780; }
-  .album { min-width: 0; }
+  .artist-line { display: flex; min-width: 0; align-items: center; overflow: hidden; color: #a4a4a8; font-size: 11.5px; font-weight: 500; line-height: 14px; }
   .status.error { color: #ffd37a; }
   .status.like-error { color: #ff9ba1; }
   .like-toggle { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; padding: 4px; border: 0; border-radius: 50%; color: rgb(255 255 255 / 62%); background: transparent; cursor: pointer; }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AlbumDetailDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import { createMenuHandlers } from "$lib/menu/hooks";
   interface Props {
     album: AlbumDetailDto; loggedIn: boolean; onPlay: (index: number, shuffle?: boolean) => void;
@@ -32,10 +33,7 @@
   <div class="info">
     <div class="eyebrow">ÁLBUM</div>
     <h1>{album.title}</h1>
-    {#if album.artist}
-      {#if album.artistId}<button class="artist" type="button" onclick={() => onOpenArtist(album.artistId!)}>{album.artist}</button>
-      {:else}<div class="artist text">{album.artist}</div>{/if}
-    {/if}
+    {#if album.artistRuns?.length || album.artist}<div class="artist-credit-line"><ArtistCredits artistRuns={album.artistRuns} artists={album.artist} artistId={album.artistId} {onOpenArtist} /></div>{/if}
     <div class="metadata">{#each meta as part, i (i)}{#if i > 0}<span aria-hidden="true">·</span>{/if}<span>{part}</span>{/each}</div>
     {#if hasDescription}<button class="description" type="button" aria-label="Leer descripción completa" onclick={onDescription}>{album.description}<span> más</span></button>{/if}
     <div class="actions">
@@ -60,8 +58,7 @@
   .info { display: flex; min-width: 0; min-height: 180px; flex: 1; flex-direction: column; align-items: flex-start; }
   .eyebrow { color: #a6a6ad; font-size: 11px; font-weight: 700; letter-spacing: .12em; }
   h1 { margin: 4px 0 3px; max-width: 100%; font-size: 32px; line-height: 1.12; font-weight: 700; }
-  .artist { padding: 0; border: 0; color: #f7f7f8; background: none; font-size: 16px; font-weight: 650; text-align: left; }
-  button.artist { cursor: pointer; } button.artist:hover { text-decoration: underline; }
+  .artist-credit-line { min-width: 0; max-width: 100%; color: #f7f7f8; font-size: 16px; font-weight: 650; }
   .metadata { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; color: #aaaab1; font-size: 12px; }
   .description { max-width: min(620px, 100%); margin: 5px 0 0; padding: 0; overflow: hidden; border: 0; color: #aaaab1; background: none; font: inherit; font-size: 12px; line-height: 1.45; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; cursor: pointer; }
   .description span { color: #f7f7f8; font-weight: 650; white-space: nowrap; }
@@ -74,6 +71,6 @@
   .more { width: 36px; padding: 0; font-size: 15px; }
   .error { margin: 5px 0 0; color: #ff9d9d; font-size: 12px; }
   button:focus-visible { outline: 2px solid var(--sideb-highlight); outline-offset: 3px; }
-  @media (max-width: 680px) { .header { gap: 16px; padding: 22px 18px; } .artwork { width: 128px; height: 128px; } .info { height: auto; min-height: 128px; } h1 { font-size: 24px; } .eyebrow { font-size: 10px; } .artist { font-size: 14px; } .actions { margin-top: 14px; } }
+  @media (max-width: 680px) { .header { gap: 16px; padding: 22px 18px; } .artwork { width: 128px; height: 128px; } .info { height: auto; min-height: 128px; } h1 { font-size: 24px; } .eyebrow { font-size: 10px; } .artist-credit-line { font-size: 14px; } .actions { margin-top: 14px; } }
   @media (max-width: 480px) { .header { flex-direction: column; } .info { width: 100%; } }
 </style>

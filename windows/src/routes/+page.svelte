@@ -30,6 +30,7 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import type {
     SongDto,
+    HomeArtistRunDto,
     BrowseCardDto,
     BackendStatusDto,
     AuthStatusDto,
@@ -376,6 +377,7 @@
       artists: song.artists || fallbackArtist, thumbnail: song.thumbnail || fallbackThumbnail,
       duration: song.duration ? parseDuration(song.duration) : null,
       artistId: song.artistId, albumId: song.albumId, album: song.album,
+      artistRuns: song.artistRuns?.map(run => ({ ...run })) ?? [],
     }));
     if (!entries.length) throw new Error("No hay canciones disponibles para reproducir.");
     let startIndex = indexed.findIndex((entry) => entry.originalIndex === index);
@@ -461,11 +463,11 @@
   }
 
   async function handlePlaySong(videoId: string,
-    meta?: { title?: string; artists?: string; thumbnail?: string | null; duration?: string | null; artistId?: string | null; albumId?: string | null; album?: string | null }) {
+    meta?: { title?: string; artists?: string; thumbnail?: string | null; duration?: string | null; artistId?: string | null; artistRuns?: HomeArtistRunDto[]; albumId?: string | null; album?: string | null }) {
     ++collectionPlayRevision;
     await player.playSong({ videoId, title: meta?.title ?? "Canción", artists: meta?.artists ?? "",
       thumbnail: meta?.thumbnail ?? null, duration: meta?.duration ?? null,
-      artistId: meta?.artistId, albumId: meta?.albumId, album: meta?.album }).catch(() => {});
+      artistId: meta?.artistId, artistRuns: meta?.artistRuns, albumId: meta?.albumId, album: meta?.album }).catch(() => {});
   }
   function playQueueIndex(index: number) { ++collectionPlayRevision; void player.playQueueIndex(index).catch(() => {}); }
   function handleNext() { ++collectionPlayRevision; return player.next(); }
@@ -720,7 +722,7 @@
         onRetry={() => lastAlbumBrowseId && openAlbumDetail(lastAlbumBrowseId, undefined, false)}
         onPlay={playAlbum} onOpenArtist={openArtistDetail} onOpenAlbum={openAlbumDetail}
         onOpenCatalog={openCatalog} onToggleLibrary={toggleAlbumLibrary} onOpenPlaylist={openPlaylist}
-        onPlaySong={(item) => handlePlaySong(item.id, {title:item.title,artists:item.subtitle ?? '',thumbnail:item.thumbnail,duration:item.duration})} />
+        onPlaySong={(item) => handlePlaySong(item.id, {title:item.title,artists:item.artists ?? item.subtitle ?? '',thumbnail:item.thumbnail,duration:item.duration,artistRuns:item.artistRuns,artistId:item.artistId,album:item.album,albumId:item.albumId})} />
     {/key}
   {:else if activeView === "artist_detail"}
     {#key lastArtistBrowseId}
@@ -730,7 +732,7 @@
         onRetry={() => lastArtistBrowseId && openArtistDetail(lastArtistBrowseId, false)}
         onPlay={playArtist} onStartRadio={startArtistRadio} onToggleSubscription={toggleArtistSubscription}
         onOpenAlbum={openAlbumDetail} onOpenArtist={openArtistDetail} onOpenCatalog={openCatalog} onOpenPlaylist={openPlaylist}
-        onPlaySong={(item) => handlePlaySong(item.id, {title:item.title,artists:item.subtitle ?? '',thumbnail:item.thumbnail,duration:item.duration})} />
+        onPlaySong={(item) => handlePlaySong(item.id, {title:item.title,artists:item.artists ?? item.subtitle ?? '',thumbnail:item.thumbnail,duration:item.duration,artistRuns:item.artistRuns,artistId:item.artistId,album:item.album,albumId:item.albumId})} />
     {/key}
   {:else if activeView === "catalog"}
     {#key catalogTarget?.id}
@@ -738,7 +740,7 @@
         isLoading={isCatalogLoading} error={catalogError} onBack={goBackFromDetail}
         onRetry={() => catalogTarget && openCatalog(catalogTarget.id, catalogTarget.params, catalogTarget.title, false)}
         onOpenAlbum={openAlbumDetail} onOpenArtist={openArtistDetail} onOpenPlaylist={openPlaylist}
-        onPlaySong={(item) => handlePlaySong(item.id, { title: item.title, artists: item.subtitle ?? "", thumbnail: item.thumbnail, duration: item.duration })} />
+        onPlaySong={(item) => handlePlaySong(item.id, {title:item.title,artists:item.artists ?? item.subtitle ?? '',thumbnail:item.thumbnail,duration:item.duration,artistRuns:item.artistRuns,artistId:item.artistId,album:item.album,albumId:item.albumId})} />
     {/key}
 
   <!-- VISTA 2: Inicio como en macOS -->
@@ -769,6 +771,7 @@
       onSubmit={executeSearch} onQueryChange={(query) => search.setQuery(query)}
       onModeChange={handleSwitchSearchMode} onQuickSearch={handleQuickSearch}
       onPlaySong={(song) => handlePlaySong(song.videoId, song)}
+      onOpenArtist={openArtistDetail}
       onOpenAlbum={(album) => openAlbumDetail(album.id, "search")} />
   {/if}
 </main>

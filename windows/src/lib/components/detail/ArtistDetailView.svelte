@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ArtistDetailDto, BrowseCardDto } from "$lib/types";
+  import ArtistCredits from "$lib/components/ArtistCredits.svelte";
   import DescriptionModal from "./DescriptionModal.svelte";
   import { createMenuHandlers } from "$lib/menu/hooks";
   import { targetFromCard } from "$lib/menu/types";
@@ -176,8 +177,7 @@
                   {#if song.thumbnail && !failedImages.has(song.thumbnail)}<img src={song.thumbnail} alt="" loading="lazy" onerror={() => failedImages = new Set(failedImages).add(song.thumbnail!)} />{:else}<span aria-hidden="true">♫</span>{/if}
                 </button>
                 <div class="song-text"><button class="song-title" type="button" onclick={() => onPlay(index)} onkeydown={songMenu.onKeyDown}>{song.title}</button>
-                  {#if song.album && song.albumId}<button class="song-subtitle" type="button" onclick={() => onOpenAlbum(song.albumId!)}>{song.album}</button>
-                  {:else}<span class="song-subtitle">{song.album || song.artists}</span>{/if}
+                  <div class="song-subtitle"><ArtistCredits artistRuns={song.artistRuns} artists={song.artists} artistId={song.artistId} {onOpenArtist} album={song.album} albumId={song.albumId} {onOpenAlbum} /></div>
                 </div>
                 <span class="song-duration">{song.duration ?? ""}</span>
               </div>
@@ -198,15 +198,25 @@
             <div class="carousel">
               {#each section.items as card, index (`${card.kind}:${card.id}:${index}`)}
                 {@const cardMenu = createMenu(() => targetFromCard(card), { view: 'artist_detail', currentId: artist.channelId })}
-                {#if canOpenCard(card)}
-                  <button class="carousel-card interactive-card" class:video={card.kind === "video"} type="button" onclick={() => openCard(card)} oncontextmenu={cardMenu.onContextMenu} onkeydown={cardMenu.onKeyDown}>
-                    {@render cardContent(card)}
-                  </button>
-                {:else}
-                  <div class="carousel-card" role="group" class:video={card.kind === "video"} aria-label={`${card.title}; acción no disponible`} oncontextmenu={cardMenu.onContextMenu}>
-                    {@render cardContent(card)}
-                  </div>
-                {/if}
+                <article class="carousel-card" role="group" aria-label={card.title} class:video={card.kind === "video"} oncontextmenu={cardMenu.onContextMenu}>
+                  {#if canOpenCard(card)}
+                    <button class="carousel-card-main interactive-card" type="button" onclick={() => openCard(card)} onkeydown={cardMenu.onKeyDown} aria-label={`${card.title}${card.subtitle ? `, ${card.subtitle}` : ''}`}>
+                      {@render cardContent(card)}
+                    </button>
+                  {:else}
+                    <div class="carousel-card-main informational" role="group" aria-label={`${card.title}; acción no disponible`}>
+                      {@render cardContent(card)}
+                    </div>
+                  {/if}
+                  {#if card.kind === 'artist'}
+                    {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
+                  {:else if card.kind === 'album'}
+                    {#if card.artistRuns?.length || card.artists?.trim()}<div class="card-credits"><ArtistCredits artistRuns={card.artistRuns} artists={card.artists} artistId={card.artistId} {onOpenArtist} wrap /></div>
+                    {:else if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
+                  {:else if ['song', 'video'].includes(card.kind) && (card.artistRuns?.length || card.artists?.trim())}
+                    <div class="card-credits"><ArtistCredits artistRuns={card.artistRuns} artists={card.artists} artistId={card.artistId} {onOpenArtist} album={card.album} albumId={card.albumId} {onOpenAlbum} wrap /></div>
+                  {:else if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
+                </article>
               {/each}
             </div>
           </section>
@@ -227,7 +237,6 @@
     {:else}<span class="card-art-fallback" class:round={card.kind === "artist"}>♪</span>{/if}
   </span>
   <span class="card-title">{card.title}</span>
-  {#if card.subtitle}<span class="card-subtitle">{card.subtitle}</span>{/if}
 {/snippet}
 
 {#if showDescription && artist?.description}
@@ -270,7 +279,6 @@
   .top-song .song-title { overflow: hidden; color: #f2f2f4; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
   .top-song.current .song-title { font-weight: 650; color: var(--sideb-highlight); }
   .top-song .song-subtitle { overflow: hidden; color: #aaaab1; text-align: left; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-  button.song-subtitle:hover { text-decoration: underline; color: white; }
   .song-duration { flex: none; color: #aaaab1; font-size: 12px; font-variant-numeric: tabular-nums; }
   .carousel-card.video { width: 200px; min-width: 200px; }
   .carousel-card.video .card-art-wrap { width: 200px; height: 112px; }
@@ -282,14 +290,17 @@
   .see-all { border: 0; background: transparent; color: var(--text-primary, #f3f3f5); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
   .see-all:hover { color: var(--sideb-highlight, #d06c70); }
   .carousel { display: flex; gap: 16px; overflow-x: auto; padding: 0 32px 4px; scrollbar-width: thin; }
-  .carousel-card { display: flex; width: 144px; min-width: 144px; flex-direction: column; align-items: flex-start; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
-  .interactive-card { cursor: pointer; }
+  .carousel-card { display: flex; width: 144px; min-width: 144px; flex-direction: column; align-items: flex-start; gap: 6px; padding: 0; color: inherit; text-align: left; font: inherit; }
+  .carousel-card-main { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: flex-start; gap: 7px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; }
+  .interactive-card { cursor: pointer; }.interactive-card:hover .card-art-wrap { filter: brightness(1.08); }
+  .informational { cursor: default; }
   .card-art-wrap { position: relative; display: block; width: 144px; height: 144px; overflow: hidden; border-radius: 10px; background: rgb(255 255 255 / 8%); }
   .card-art-wrap img, .card-art-fallback { display: grid; width: 100%; height: 100%; place-items: center; object-fit: cover; font-size: 32px; color: #aaa; }
   .card-art-wrap img.round, .card-art-fallback.round { border-radius: 50%; }
   .card-art-fallback { background: rgb(255 255 255 / 8%); }
   .card-title { max-width: 100%; overflow: hidden; color: var(--text-primary, #f3f3f5); font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
   .card-subtitle { max-width: 100%; overflow: hidden; color: var(--text-secondary, #aaaab0); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+  .card-credits { min-width: 0; max-width: 100%; color: var(--text-secondary, #aaaab0); font-size: 11px; line-height: 15px; }
   .loading, .state-card { display: flex; min-height: 220px; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: var(--text-secondary, #aaaab0); text-align: center; }
   .state-card { margin: 0 32px; padding: 30px; }
   .state-card h2 { color: var(--text-primary, #eee); }

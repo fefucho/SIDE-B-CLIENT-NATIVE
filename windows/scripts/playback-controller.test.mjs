@@ -27,12 +27,62 @@ test('queue metadata survives RPC normalization and queue actions preserve fresh
     throw new Error(command);
   }, async (event, handler) => { listeners.set(event, handler); return () => {}; }, next => published = next);
   await player.connect();
-  const pending = player.enqueue([{ ...song('v'), artistId: 'artist', albumId: 'album', album: 'Album' }], 'next');
+  const artistRuns = [{ text: 'Daft Punk', id: 'UC-daft' }, { text: 'Pharrell Williams', id: 'UC-pharrell' }];
+  const pending = player.enqueue([{ ...song('v'), artistId: 'artist', artistRuns, albumId: 'album', album: 'Album' }], 'next');
   assert.equal(args.items[0].artistId, 'artist'); assert.equal(args.items[0].albumId, 'album'); assert.equal(args.items[0].duration, 201);
+  assert.deepEqual(args.items[0].artistRuns, artistRuns);
   listeners.get('playback-progress')({ payload: { generation: 2, position: 12, duration: 201 } });
   enqueued.resolve(state(2, { position: 10, queue: { revision: 1, items: args.items } }));
   await pending;
   assert.equal(published.state.position, 12); assert.equal(published.state.queue.items[0].album, 'Album');
+  published.state.queue.items[0].artistRuns[1].id = 'changed-by-consumer';
+  assert.equal(player.snapshot.state.queue.items[0].artistRuns[1].id, 'UC-pharrell');
+});
+
+test('play, radio and retry preserve individual artist links and album metadata', async () => {
+  const artistRuns = [{ text: 'Daft Punk', id: 'UC-daft' }, { text: 'Pharrell Williams', id: 'UC-pharrell' }];
+  const track = { ...song('dance'), artists: 'Daft Punk & Pharrell Williams', artistRuns,
+    album: 'Random Access Memories', albumId: 'MPRE-album', artistId: 'UC-daft' };
+  const calls = [];
+  const player = new PlaybackController(async (command, args) => {
+    calls.push({ command, args });
+    return state(2, { currentTrack: { ...track, duration: 201 }, queue: { items: [{ ...track, entryId: 'occurrence', duration: 201 }], currentIndex: 0 } });
+  }, async () => () => {}, () => {});
+  await player.playSong(track);
+  assert.deepEqual(calls[0].args.artistRuns, artistRuns);
+  assert.deepEqual(calls[0].args.queueItems[0].artistRuns, artistRuns);
+  assert.equal(calls[0].args.album, track.album);
+  await player.retry();
+  assert.deepEqual(calls[1].args.artistRuns, artistRuns);
+  assert.equal(calls[1].args.queueEntryId, 'occurrence');
+  await player.startRadio(track);
+  assert.deepEqual(calls[2].args.song.artistRuns, artistRuns);
+  assert.equal(calls[2].args.song.albumId, track.albumId);
+});
+
+test('radio metadata arriving after progress enriches the current track without rewinding it', async () => {
+  const listeners = new Map(); const radio = deferred();
+  const track = { ...song('dance'), duration: 201 };
+  const entry = { ...track, entryId: 'seed' };
+  const player = new PlaybackController(async command => {
+    if (command === 'get_playback_state') return state(3, { currentTrack: track, position: 20, isPlaying: true,
+      queue: { items: [entry], currentIndex: 0 } });
+    if (command === 'retry_radio') return radio.promise;
+    throw new Error(command);
+  }, async (event, handler) => { listeners.set(event, handler); return () => {}; }, () => {});
+  await player.connect();
+  const pending = player.retryRadio();
+  listeners.get('playback-progress')({ payload: { generation: 3, position: 22, duration: 201 } });
+  const metadata = { artistRuns: [{ text: 'Daft Punk', id: 'UC-daft' }, { text: 'Pharrell Williams', id: 'UC-pharrell' }],
+    album: 'Random Access Memories', albumId: 'MPRE-album' };
+  radio.resolve(state(3, { currentTrack: { ...track, ...metadata }, position: 20,
+    queue: { items: [{ ...entry, ...metadata }], currentIndex: 0, revision: 1 } }));
+  await pending;
+  assert.equal(player.snapshot.state.position, 22);
+  assert.equal(player.snapshot.state.isPlaying, true);
+  assert.equal(player.snapshot.state.currentTrack.album, metadata.album);
+  assert.deepEqual(player.snapshot.state.currentTrack.artistRuns, metadata.artistRuns);
+  assert.equal(player.snapshot.state.queue.items[0].entryId, 'seed');
 });
 test('failed queue mutation reports to caller without marking playing audio as failed', async () => {
   let published;
