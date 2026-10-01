@@ -816,7 +816,7 @@
     overflow: hidden;
   }
 
-  :root {
+  :global(:root) {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 15px;
     line-height: 1.5;
