@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PlayerIcon from "../player/PlayerIcon.svelte";
   import type { PlaybackStateDto, QueueEntryDto } from "$lib/types";
 
   type Panel = "queue" | "lyrics" | "related";
@@ -93,9 +94,7 @@
       <div class="tablist" role="tablist" aria-label="Panel de reproducción">
         {#each panels as item (item.id)}
           <button type="button" id={`fullscreen-tab-${item.id}`} role="tab" aria-selected={panel === item.id} aria-controls="fullscreen-panel" class:active={panel === item.id} onclick={() => selectPanel(item.id)}>
-            {#if item.id === "queue"}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-            {:else if item.id === "lyrics"}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 11h12M5 16h8M5 20h5" /></svg>
-            {:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h11M4 12h11M4 17h11M18 5v11m-2-2 2 2 2-2" /></svg>{/if}
+            <PlayerIcon name={item.id} size={14} />
             {item.label}
           </button>
         {/each}
@@ -154,8 +153,8 @@
   .metadata-link { padding: 0; border: 0; color: inherit; background: transparent; font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }.metadata-link:hover { color: white; text-decoration: underline; }.separator { flex: none; color: rgb(255 255 255 / 40%); }
   .like-button, .more-button { display: grid; flex: 0 0 30px; place-items: center; width: 30px; height: 30px; padding: 6px; border: 0; border-radius: 50%; color: rgb(255 255 255 / 70%); background: transparent; cursor: pointer; }.like-button svg, .more-button svg { width: 18px; height: 18px; }.like-button:hover, .more-button:hover { color: white; background: rgb(255 255 255 / 10%); }.like-button.liked { color: #d06c70; }.like-button:disabled { opacity: .5; cursor: wait; }
   .side-column { display: flex; min-width: 0; min-height: 0; height: 100%; flex-direction: column; align-items: center; gap: 14px; overflow: hidden; }
-  .tablist { display: flex; flex: 0 0 40px; align-items: center; gap: 0; max-width: 100%; padding: 4px; border: 1px solid rgb(255 255 255 / 12%); border-radius: 999px; background: rgb(255 255 255 / 8%); }
-  .tablist button { display: inline-flex; min-width: 0; align-items: center; justify-content: center; gap: 4px; padding: 8px 7px; border: 0; border-radius: 999px; color: rgb(255 255 255 / 65%); background: transparent; font: inherit; font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer; }.tablist button.active { color: #fff; background: #a33d45; font-weight: 650; }.tablist button:hover:not(.active) { color: #fff; }.tablist svg { flex: 0 0 14px; width: 14px; height: 14px; }
+  .tablist { box-sizing: border-box; display: flex; flex: 0 0 40px; height: 40px; align-items: center; gap: 0; max-width: 100%; padding: 4px; border-radius: 999px; background: #343437; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%); }
+  .tablist button { display: inline-flex; flex: none; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 8px 16px; border: 0; border-radius: 999px; color: rgb(255 255 255 / 65%); background: transparent; font: inherit; font-size: 13px; font-weight: 500; line-height: 16px; white-space: nowrap; cursor: pointer; }.tablist button.active { color: #fff; background: #a33d45; font-weight: 650; }.tablist button:hover:not(.active) { color: #fff; }
   .panel { box-sizing: border-box; display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
   .queue-content { display: flex; width: 100%; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }.queue-heading { display: flex; flex: none; min-width: 0; flex-direction: column; gap: 8px; padding: 6px 8px 12px; }.queue-context { display: flex; min-width: 0; align-items: center; gap: 8px; color: rgb(255 255 255 / 90%); font-size: 12px; font-weight: 650; }.queue-context svg { flex: 0 0 14px; width: 14px; height: 14px; }.queue-context > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.count { flex: none; margin-left: auto; color: rgb(255 255 255 / 53%); font-size: 11px; font-weight: 500; white-space: nowrap; }
   .radio-state, .radio-error { display: flex; align-items: center; gap: 8px; color: rgb(255 255 255 / 67%); font-size: 11px; }.radio-error { color: #ffb7bb; }.radio-error button { flex: none; padding: 3px 8px; border: 1px solid rgb(255 255 255 / 15%); border-radius: 999px; color: #fff; background: rgb(255 255 255 / 8%); font: inherit; cursor: pointer; }.spinner { width: 12px; height: 12px; border: 2px solid rgb(255 255 255 / 24%); border-top-color: #d06c70; border-radius: 50%; animation: spin .8s linear infinite; }@keyframes spin { to { transform: rotate(360deg); } }

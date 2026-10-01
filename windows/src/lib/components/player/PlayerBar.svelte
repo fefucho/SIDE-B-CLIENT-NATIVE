@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import PlayerIcon from "./PlayerIcon.svelte";
   import type { PlaybackStateDto } from "$lib/types";
   type Panel = "queue" | "lyrics" | "related";
 
@@ -119,8 +120,9 @@
 
   <div class="main-row">
     <div class="transport">
+      <button type="button" class="mode-toggle" disabled aria-label="Aleatorio no disponible todavía" title="Aleatorio: todavía no disponible en Windows"><PlayerIcon name="shuffle" size={17} /></button>
       <button type="button" class="skip" onclick={onPrevious} disabled={!hasTrack} aria-label="Pista anterior" title="Pista anterior">
-        <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M6 5h2v14H6zm3 7 10-7v14z" /></svg>
+        <PlayerIcon name="backward" size={20} />
       </button>
       <button
         type="button"
@@ -142,8 +144,9 @@
         {/if}
       </button>
       <button type="button" class="skip" onclick={onNext} disabled={!hasTrack || playback.queue.currentIndex === null || playback.queue.currentIndex + 1 >= playback.queue.items.length} aria-label="Pista siguiente" title="Pista siguiente">
-        <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M16 5h2v14h-2zM5 5l10 7-10 7z" /></svg>
+        <PlayerIcon name="forward" size={20} />
       </button>
+      <button type="button" class="mode-toggle" disabled aria-label="Repetir no disponible todavía" title="Repetir: todavía no disponible en Windows"><PlayerIcon name="repeat" size={17} /></button>
     </div>
 
     <div class="track" role="group" aria-label="Canción actual" oncontextmenu={(event) => { if (onOpenMenu && hasTrack) { event.preventDefault(); onOpenMenu(event); } }}>
@@ -155,9 +158,14 @@
         {/if}
       </div>
       <div class="metadata">
+        <div class="title-line">
         <span class="title" title={playback.currentTrack?.title ?? "Sin reproducción"}>
           {playback.currentTrack?.title ?? "Sin reproducción"}
         </span>
+        <button class="like-toggle" type="button" class:liked disabled={!loggedIn || !hasTrack || !onToggleLike || likePending || playback.isLoading} onclick={onToggleLike} aria-pressed={liked} aria-label={liked ? "Quitar de Me Gusta" : "Me Gusta"} title={!loggedIn ? "Iniciá sesión para usar Me Gusta" : likeError ?? (likePending ? "Actualizando Me Gusta…" : liked ? "Quitar de Me Gusta" : "Me Gusta")}>
+          {#if likePending}<span class="like-spinner" aria-hidden="true"></span>{:else}<svg viewBox="0 0 24 24" aria-hidden="true" fill={liked ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 8.7c0 4.2-6.4 9.1-8.8 11-2.4-1.9-8.8-6.8-8.8-11a4.9 4.9 0 0 1 8.8-3.1 4.9 4.9 0 0 1 8.8 3.1Z" /></svg>{/if}
+        </button>
+        </div>
         {#if playback.error}
           <span class="status error" role="status" title={playback.error}>{playback.error}</span>
         {:else if playback.isLoading}
@@ -175,38 +183,23 @@
           <span class="status like-error" role="alert" title={likeError}>{likeError}</span>
         {/if}
       </div>
-      {#if loggedIn && hasTrack && onToggleLike}
-        <button
-          class="like-toggle"
-          type="button"
-          class:liked
-          disabled={likePending || playback.isLoading}
-          onclick={onToggleLike}
-          aria-pressed={liked}
-          aria-label={liked ? "Quitar de Me Gusta" : "Me Gusta"}
-          title={likeError ?? (likePending ? "Actualizando Me Gusta…" : liked ? "Quitar de Me Gusta" : "Me Gusta")}
-        >
-          {#if likePending}<span class="like-spinner" aria-hidden="true"></span>{:else}
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill={liked ? "currentColor" : "none"} stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 8.7c0 4.2-6.4 9.1-8.8 11-2.4-1.9-8.8-6.8-8.8-11a4.9 4.9 0 0 1 8.8-3.1 4.9 4.9 0 0 1 8.8 3.1Z" /></svg>
-          {/if}
-        </button>
-      {/if}
-      {#if onOpenMenu && playback.currentTrack}
-        <button class="more-toggle" type="button" aria-label="Más opciones de la canción" title="Más opciones" onclick={onOpenMenu}>
+        <button class="more-toggle" type="button" disabled={!onOpenMenu || !hasTrack} aria-label="Más opciones de la canción" title="Más opciones" onclick={onOpenMenu}>
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
         </button>
-      {/if}
     </div>
 
+    <div class="control-spacer" aria-hidden="true"></div>
     <div class="end-controls">
       {#if onSelectPanel}
         <button type="button" class="panel-shortcut" class:panel-active={fullscreenOpen && selectedPanel === "lyrics"} aria-label="Abrir letras" title="Letras" aria-pressed={fullscreenOpen && selectedPanel === "lyrics"} onclick={() => onSelectPanel?.("lyrics")}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 6h14M5 11h12M5 16h8M5 20h5"/></svg>
+          <PlayerIcon name="lyrics" />
         </button>
+        <button type="button" class="panel-shortcut" disabled aria-label="Genius no disponible todavía" title="Letras y anotaciones de Genius: todavía no disponibles en Windows"><PlayerIcon name="annotations" /></button>
         <button type="button" class="panel-shortcut" class:panel-active={fullscreenOpen && selectedPanel === "queue"} aria-label="Abrir cola" title="Cola de reproducción" aria-pressed={fullscreenOpen && selectedPanel === "queue"} onclick={() => onSelectPanel?.("queue")}>
-          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <PlayerIcon name="queue" />
         </button>
       {/if}
+      <button type="button" class="panel-shortcut" disabled aria-label="Selección de salida de audio no disponible todavía" title="Dispositivos de salida: todavía no disponibles en Windows"><PlayerIcon name="output" size={18} /></button>
       <div class="volume" bind:this={volumeRoot}>
         <button bind:this={volumeButton} type="button" class="volume-toggle" aria-label="Mostrar volumen" title={`Volumen: ${Math.round(volume)}%`} aria-expanded={volumeOpen} aria-controls="player-volume" onclick={toggleVolume}>
           <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9zm12.5 3a4 4 0 0 0-2-3.46v6.92a4 4 0 0 0 2-3.46" /></svg>
@@ -246,33 +239,36 @@
 
 <style>
   .player-bar {
+    position: relative;
     box-sizing: border-box;
     width: min(100%, 820px);
     min-width: 0;
     height: 74px;
     min-height: 74px;
     max-height: 74px;
-    padding: 7px 16px 8px;
+    padding: 0;
     color: #f5f5f6;
-    background: rgba(36, 36, 42, 0.94);
+    background: #353538;
     border: 1px solid rgba(255, 255, 255, 0.13);
     border-radius: 38px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
   }
 
   .progress {
+    position: absolute;
+    top: 7px;
+    left: 32px;
+    right: 32px;
     display: grid;
     grid-template-columns: 40px minmax(0, 1fr) 40px;
     align-items: center;
     gap: 8px;
-    height: 15px;
+    height: 14px;
   }
 
   .time {
     color: rgba(255, 255, 255, 0.62);
-    font-size: 10px;
+    font-size: 10.5px;
     font-variant-numeric: tabular-nums;
     text-align: left;
   }
@@ -292,13 +288,13 @@
 
   input[type="range"]:disabled { cursor: default; opacity: 0.45; }
 
-  .seek { height: 3px; border-radius: 3px; }
+  .seek { height: 2.5px; border-radius: 3px; }
 
   input[type="range"]::-webkit-slider-thumb {
     appearance: none;
     -webkit-appearance: none;
-    width: 5px;
-    height: 11px;
+    width: 2.5px;
+    height: 9px;
     border: 0;
     border-radius: 3px;
     background: #fff;
@@ -306,41 +302,48 @@
   }
 
   input[type="range"]::-moz-range-thumb {
-    width: 5px;
-    height: 11px;
+    width: 2.5px;
+    height: 9px;
     border: 0;
     border-radius: 3px;
     background: #fff;
   }
 
   .main-row {
+    position: absolute;
+    left: 20px;
+    right: 20px;
+    bottom: 4px;
     display: grid;
-    grid-template-columns: 102px minmax(0, 1fr) max-content;
+    grid-template-columns: 208px minmax(0, 1fr) 16px 232px;
     align-items: center;
-    gap: 10px;
-    min-height: 42px;
+    gap: 14px;
+    height: 46px;
   }
 
-  .transport { display: flex; align-items: center; justify-content: center; gap: 5px; }
-  .skip { display: grid; place-items: center; width: 27px; height: 32px; padding: 5px; border: 0; border-radius: 6px; color: #dedee3; background: transparent; cursor: pointer; }
+  .transport { display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .skip, .mode-toggle { display: grid; flex: none; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; color: #dedee3; background: transparent; cursor: pointer; }
+  .mode-toggle:disabled { color: rgb(255 255 255 / 45%); cursor: default; }
   .skip:hover:not(:disabled) { color: #fff; background: rgb(255 255 255 / 10%); }
   .skip:disabled { opacity: .38; cursor: default; }
-  .skip svg { width: 16px; height: 16px; }
 
   .play-toggle {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
+    box-sizing: border-box;
+    width: 40px;
+    flex: 0 0 40px;
+    height: 40px;
     padding: 9px;
-    border: 0;
+    border: 1px solid transparent;
     border-radius: 50%;
     color: #fff;
     background: #a33d45;
+    background-clip: padding-box;
     cursor: pointer;
   }
 
-  .play-toggle:hover:not(:disabled) { background: #b85058; }
+  .play-toggle:hover:not(:disabled) { background-color: #b85058; }
   .play-toggle:disabled { opacity: 0.48; cursor: default; }
   .play-toggle.errored { color: #ffd37a; }
   .play-toggle svg { width: 20px; height: 20px; }
@@ -358,50 +361,55 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .track {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     min-width: 0;
-    padding-left: 12px;
-    border-left: 1px solid rgba(255, 255, 255, 0.13);
+    padding-left: 14px;
   }
+  .track::before { content: ''; position: absolute; left: 0; top: 50%; width: 1px; height: 22px; transform: translateY(-50%); background: rgb(255 255 255 / 13%); }
 
   .artwork {
     display: grid;
-    flex: 0 0 40px;
+    flex: 0 0 46px;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 46px;
+    height: 46px;
     overflow: hidden;
     color: #aaaab2;
     background: rgba(255, 255, 255, 0.08);
-    border-radius: 7px;
+    border-radius: 8px;
   }
 
   .artwork img { width: 100%; height: 100%; object-fit: cover; }
   .artwork svg { width: 18px; height: 18px; }
   .metadata { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+  .title-line { display: flex; min-width: 0; align-items: center; gap: 7px; }
   .title, .artist, .status { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .title { font-size: 13px; font-weight: 600; }
-  .artist, .status { color: #b9b9c2; font-size: 11px; }
+  .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 650; line-height: 16px; }
+  .artist, .status { color: #a4a4a8; font-size: 11.5px; font-weight: 500; line-height: 14px; }
   .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
-  .metadata-link { min-width: 0; max-width: 60%; padding: 0; overflow: hidden; border: 0; color: #b9b9c2; background: transparent; font: inherit; font-size: 11px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .metadata-link { min-width: 0; max-width: 60%; padding: 0; overflow: hidden; border: 0; color: #a4a4a8; background: transparent; font: inherit; font-size: 11.5px; font-weight: 500; line-height: 14px; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
   .metadata-link:hover { color: #fff; text-decoration: underline; }
   .metadata-separator { flex: none; color: #777780; }
   .album { min-width: 0; }
   .status.error { color: #ffd37a; }
   .status.like-error { color: #ff9ba1; }
-  .like-toggle { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 50%; color: rgb(255 255 255 / 62%); background: transparent; cursor: pointer; }
+  .like-toggle { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; padding: 4px; border: 0; border-radius: 50%; color: rgb(255 255 255 / 62%); background: transparent; cursor: pointer; }
   .like-toggle:hover:not(:disabled) { color: #fff; background: rgb(255 255 255 / 9%); }
   .like-toggle.liked { color: #d06c70; }
   .like-toggle:disabled { opacity: .55; cursor: wait; }
-  .like-toggle svg { width: 17px; height: 17px; }
+  .like-toggle svg { width: 14px; height: 14px; }
   .like-spinner { width: 13px; height: 13px; border: 2px solid rgb(255 255 255 / 30%); border-top-color: #d06c70; border-radius: 50%; animation: spin .8s linear infinite; }
 
   .end-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-  .panel-shortcut, .more-toggle { display: grid; flex: 0 0 28px; place-items: center; width: 28px; height: 28px; padding: 5px; border: 0; border-radius: 7px; color: rgb(255 255 255 / 65%); background: transparent; cursor: pointer; }
-  .panel-shortcut svg, .more-toggle svg { width: 17px; height: 17px; }
-  .panel-shortcut:hover, .panel-shortcut.panel-active, .more-toggle:hover { color: #fff; background: rgb(255 255 255 / 10%); }
+  .panel-shortcut, .more-toggle { display: grid; flex: 0 0 32px; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 7px; color: rgb(255 255 255 / 65%); background: transparent; cursor: pointer; }
+  .more-toggle { width: 28px; height: 28px; flex-basis: 28px; }
+  .more-toggle svg { width: 16px; height: 16px; }
+  .panel-shortcut:disabled, .more-toggle:disabled { color: rgb(255 255 255 / 40%); cursor: default; }
+  .panel-shortcut:hover:not(:disabled), .more-toggle:hover:not(:disabled) { color: #fff; background: rgb(255 255 255 / 10%); }
+  .panel-shortcut.panel-active { color: #d06c70; }
   .volume { position: relative; flex: 0 0 32px; width: 32px; height: 32px; }
   .volume-toggle { display: grid; place-items: center; width: 32px; height: 32px; padding: 7px; border: 0; border-radius: 7px; color: #c6c6cd; background: transparent; cursor: pointer; }
   .volume-toggle:hover, .volume-toggle[aria-expanded="true"] { color: #fff; background: rgb(255 255 255 / 10%); }
