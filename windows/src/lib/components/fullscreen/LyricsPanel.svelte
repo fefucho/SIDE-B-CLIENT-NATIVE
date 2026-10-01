@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import PlayerIcon from '../player/PlayerIcon.svelte';
   import { activeLyricIndex, lyricSeekSeconds, type LyricsState } from '$lib/player/lyrics';
+  import { LyricScroller } from '$lib/player/lyric-scroll';
 
   interface Props {
     state: LyricsState;
@@ -13,6 +14,9 @@
   let { state: lyricState, position, duration, onSeek, onRetry }: Props = $props();
   let container = $state<HTMLDivElement | null>(null);
   let following = $state(true);
+  const scroller = new LyricScroller();
+  let centeredTrack: string | null = null;
+  onDestroy(() => scroller.cancel());
   const activeIndex = $derived(lyricState.lyrics ? activeLyricIndex(lyricState.lyrics, position) : null);
 
   function centerCurrent(animate = true) {
@@ -24,9 +28,12 @@
     const top = container.scrollTop + lineRect.top - containerRect.top - container.clientHeight / 2 + lineRect.height / 2;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     // Scroll this panel only: scrollIntoView would also move the artwork and app shell.
-    container.scrollTo({ top: Math.max(0, top), behavior: animate && !reduceMotion ? 'smooth' : 'instant' });
+    scroller.center(container, top, animate && !reduceMotion);
   }
-  function pauseFollowing() { if (activeIndex !== null) following = false; }
+  function pauseFollowing() {
+    scroller.cancel();
+    if (activeIndex !== null) following = false;
+  }
   function onScrollKey(event: KeyboardEvent) {
     if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) pauseFollowing();
   }
@@ -36,20 +43,29 @@
     const rect = container.getBoundingClientRect();
     if (event.clientX >= rect.left + container.clientWidth) pauseFollowing();
   }
-  function resumeFollowing() { following = true; centerCurrent(); }
-  function seekLine(seconds: number) { following = true; onSeek(seconds); }
+  function resumeFollowing() { following = true; }
+  function seekLine(seconds: number) { scroller.cancel(); following = true; onSeek(seconds); }
 
   $effect(() => {
     lyricState.trackKey;
+    scroller.cancel();
+    centeredTrack = null;
     following = true;
     if (container) container.scrollTop = 0;
   });
   $effect(() => {
     const index = activeIndex;
+    const key = lyricState.trackKey;
+    const element = container;
     const ready = lyricState.status === 'ready';
     const shouldFollow = following;
-    if (ready && shouldFollow && index !== null) {
-      void tick().then(() => { if (following && index === activeIndex) centerCurrent(); });
+    if (ready && shouldFollow && element && index !== null) {
+      void tick().then(() => {
+        if (following && container === element && index === activeIndex && key === lyricState.trackKey) {
+          centerCurrent(centeredTrack === key);
+          centeredTrack = key;
+        }
+      });
     }
   });
 </script>
