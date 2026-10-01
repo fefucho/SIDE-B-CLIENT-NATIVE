@@ -69,6 +69,6 @@
   .artist-separator { flex: none; white-space: pre; }
   .album-separator { flex: none; color: currentColor; font-size: 1.05em; font-weight: 650; }
   .credit-link { padding: 0; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }
-  .credit-link:hover { color: var(--sideb-highlight, #d06c70); text-decoration: underline; }
+  .credit-link:hover { color: #fff; }
   .credit-link:focus-visible { outline: 2px solid var(--sideb-highlight, #d06c70); outline-offset: 2px; border-radius: 2px; }
 </style>

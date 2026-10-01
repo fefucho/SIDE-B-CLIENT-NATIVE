@@ -63,7 +63,7 @@
   .song-title { font-size: 13px; font-weight: 550; }
   .artist-line { display: flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; color: #a6a6ad; white-space: nowrap; }
   .metadata-link { display: inline; color: #aaaab1; font-size: 12px; }
-  .metadata-link:hover { color: #fff; text-decoration: underline; }
+  .metadata-link:hover { color: #fff; }
   .album-heading, .album-cell { width: 22%; padding: 0 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .duration { width: 70px; padding-right: 8px; text-align: right; font-variant-numeric: tabular-nums; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
